@@ -272,9 +272,10 @@ export class Character {
       case 'idle': {
         const br = Math.sin(this.t * 1.7);
         bob = br * 0.012;
-        armL = br * 0.05; armR = -br * 0.05;
+        // Facing -Z: +X rotation swings an arm FORWARD. Arms slightly forward.
+        armL = 0.08 + br * 0.04; armR = 0.08 - br * 0.04;
         headTilt = Math.sin(this.t * 0.62) * 0.06;
-        elbowL = elbowR = -0.08;
+        elbowL = elbowR = 0.12; // elbows bend forward
         break;
       }
       case 'walk': case 'run': case 'strafe': {
@@ -282,9 +283,10 @@ export class Character {
         hipL = s; hipR = -s;
         kneeL = Math.max(0, -Math.sin(this.phase) * back) * (this.state === 'run' ? 1.0 : 0.6);
         kneeR = Math.max(0, Math.sin(this.phase) * back) * (this.state === 'run' ? 1.0 : 0.6);
+        // Opposite arm to leg swings forward (+X = forward)
         armL = -s * (this.state === 'run' ? 0.85 : 0.7);
         armR = s * (this.state === 'run' ? 0.85 : 0.7);
-        elbowL = elbowR = -(this.state === 'run' ? 0.6 : 0.35);
+        elbowL = elbowR = (this.state === 'run' ? 0.7 : 0.4); // bend FORWARD
         bob = Math.abs(Math.sin(this.phase)) * (this.state === 'run' ? 0.07 : 0.035);
         lean = this.state === 'run' ? 0.18 : 0.06;
         sideLean = strafe * (this.dir === 'right' ? -0.1 : 0.1);
@@ -292,17 +294,19 @@ export class Character {
       }
       case 'jump':
         hipL = 0.35; hipR = -0.2; kneeL = 1.0; kneeR = 0.5;
-        armL = -1.1; armR = -1.1; elbowL = elbowR = -0.3;
+        armL = 1.2; armR = 1.2; elbowL = elbowR = 0.3; // arms UP and forward
         lean = -0.06;
         break;
       case 'fall':
         hipL = -0.15; hipR = 0.25; kneeL = 0.5; kneeR = 0.35;
-        armL = -0.85; armR = -0.85;
+        armL = 0.55; armR = 0.55; // arms out/forward for balance
+        elbowL = elbowR = 0.4;
         lean = 0.05;
         break;
       case 'land':
         hipL = 0.18; hipR = -0.18; kneeL = 0.85; kneeR = 0.85;
-        armL = 0.25; armR = 0.25;
+        armL = 0.5; armR = 0.5; // arms forward to absorb
+        elbowL = elbowR = 0.5;
         bob = -0.1;
         break;
     }
@@ -317,12 +321,13 @@ export class Character {
 
     this.shoulderL.rotation.x = this.L(this.shoulderL.rotation.x, armL, k);
     this.shoulderR.rotation.x = this.L(this.shoulderR.rotation.x, armR, k);
-    this.shoulderL.rotation.z = this.L(this.shoulderL.rotation.z, -0.10, k);
-    this.shoulderR.rotation.z = this.L(this.shoulderR.rotation.z, 0.10, k);
+    // Small outward splay keeps arms clear of the torso (left arm -Z, right +Z)
+    this.shoulderL.rotation.z = this.L(this.shoulderL.rotation.z, -0.14, k);
+    this.shoulderR.rotation.z = this.L(this.shoulderR.rotation.z, 0.14, k);
     this.elbowL.rotation.x = this.L(this.elbowL.rotation.x, elbowL, k);
     this.elbowR.rotation.x = this.L(this.elbowR.rotation.x, elbowR, k);
-    this.wristL.rotation.x = this.L(this.wristL.rotation.x, -0.1, k);
-    this.wristR.rotation.x = this.L(this.wristR.rotation.x, -0.1, k);
+    this.wristL.rotation.x = this.L(this.wristL.rotation.x, 0.1, k);
+    this.wristR.rotation.x = this.L(this.wristR.rotation.x, 0.1, k);
 
     this.spine.rotation.x = this.L(this.spine.rotation.x, lean, k);
     this.spine.rotation.z = this.L(this.spine.rotation.z, sideLean, k);

@@ -22,20 +22,28 @@ export class Environment {
     this.root = new BABYLON.TransformNode('environmentRoot', scene);
 
     // ---- Real HDRI environment (vintage measuring lab) ----
+    // .hdr files are LINEAR radiance data — gammaSpace must be false or the
+    // image gets double-gamma'd (the washed-out, milky look).
     this.envTexture = new BABYLON.HDRCubeTexture('/hdri/vintage_measuring_lab_2k.hdr', scene, 256);
+    this.envTexture.gammaSpace = false;
     scene.environmentTexture = this.envTexture as any;
-    scene.environmentIntensity = 1.1;
-    scene.ambientColor = new BABYLON.Color3(0.12, 0.14, 0.18);
+    scene.environmentIntensity = 0.85;
+    scene.ambientColor = new BABYLON.Color3(0.08, 0.09, 0.11);
 
     // ---- Skybox showing the SAME HDRI as the background ----
+    // Use a dedicated texture instance so the skybox exposure is independent
+    // from the IBL intensity (no gray emissive tint — that desaturates it).
+    const skyTex = new BABYLON.HDRCubeTexture('/hdri/vintage_measuring_lab_2k.hdr', scene, 256);
+    skyTex.gammaSpace = false;
+    skyTex.coordinatesMode = BABYLON.Texture.SKYBOX_MODE;
+    skyTex.level = 0.85; // tone-mapped by ACES → rich, not blown out
     const sky = BABYLON.MeshBuilder.CreateBox('skyBox', { size: 2000 }, scene);
     const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
     skyMat.backFaceCulling = false;
     skyMat.disableLighting = true;
-    skyMat.reflectionTexture = this.envTexture;
-    skyMat.reflectionTexture.coordinatesMode = BABYLON.Texture.SKYBOX_MODE;
-    skyMat.reflectionTexture.level = 1.0;
-    skyMat.emissiveColor = new BABYLON.Color3(0.55, 0.55, 0.55);
+    skyMat.reflectionTexture = skyTex;
+    skyMat.diffuseColor = BABYLON.Color3.Black();
+    skyMat.specularColor = BABYLON.Color3.Black();
     sky.material = skyMat;
     sky.isPickable = false;
     sky.infiniteDistance = true;

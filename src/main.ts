@@ -6,6 +6,7 @@ import { Input } from './core/Input';
 import { CameraRig } from './core/CameraRig';
 import { Character, DEFAULT_COLORS, CharacterColors, AnimState, MoveDir } from './character/Character';
 import { MixamoController } from './character/Mixamo';
+import { Polish } from './core/Polish';
 import { Materials } from './world/Materials';
 import { World, Pickup, ZoneMarker } from './world/World';
 import { UI } from './ui/UI';
@@ -22,6 +23,7 @@ class App {
   private camera!: CameraRig;
   private character!: Character;
   private mixamo!: MixamoController;
+  private polish!: Polish;
   private materials!: Materials;
   private world!: World;
   private ui!: UI;
@@ -53,8 +55,9 @@ class App {
     this.scene.clearColor = new BABYLON.Color4(0.11, 0.15, 0.19, 1);
     this.scene.imageProcessingConfiguration.toneMappingEnabled = true;
     this.scene.imageProcessingConfiguration.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-    this.scene.imageProcessingConfiguration.exposure = 1.15;
-    this.scene.imageProcessingConfiguration.contrast = 1.12;
+    // Neutral exposure + punchier contrast preserves the HDRI's colors under ACES
+    this.scene.imageProcessingConfiguration.exposure = 1.0;
+    this.scene.imageProcessingConfiguration.contrast = 1.28;
 
     this.ui = new UI(DEFAULT_COLORS, {
       customize: (c: CharacterColors) => this.character.applyColors(c),
@@ -79,6 +82,7 @@ class App {
       this.ui.setPickups(this.pickupCount, this.world.pickups.length);
       this.camera.punch(3);
       this.flashPickup(p);
+      this.polish?.sparkle(p.mesh.position);
     };
     this.world.onZone = (z: ZoneMarker) => this.ui.setZone(z.name);
 
@@ -103,6 +107,8 @@ class App {
 
     this.input = new Input();
     this.camera = new CameraRig(this.scene, this.canvas);
+    // TRIPLE-AAA polish layer (post-FX, atmosphere, rim light, contact shadow)
+    this.polish = new Polish(this.scene, this.camera.getCamera());
     // Restrict camera so it can never rotate under the ground
     const arc = this.camera.getCamera() as BABYLON.ArcRotateCamera;
     arc.lowerBetaLimit = 0.25;      // never directly overhead
@@ -309,6 +315,11 @@ class App {
       this.world.update(dt, p.x);
       this.camera.update(dt, new BABYLON.Vector3(p.x, p.y - 0.4, p.z), this.havok.getVelocity(this.playerBody).x * 0.3);
     }
+
+    // AAA polish — contact shadow + rim light follow the hero
+    const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0.3, 0) : this.playerProxy.position;
+    this.polish.update(dt, pp, pp.y - (this.mode === 'welcome' ? 0.3 : 0.7),
+      this.mode === 'explore' && this.havok.getVelocity(this.playerBody).length() > 0.5);
 
     this.fpsAcc += dt; this.fpsFrames++;
     if (this.fpsAcc >= 0.5) {
