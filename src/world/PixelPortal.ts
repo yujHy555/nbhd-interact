@@ -68,13 +68,10 @@ export class PixelPortal {
   private state: PortalState = 'idle';
   private arch!: BABYLON.Mesh;
   private glowMat!: BABYLON.StandardMaterial;
-  private returnDoor!: BABYLON.Mesh;
-  private returnGlow!: BABYLON.StandardMaterial;
   private veil!: BABYLON.Mesh;
   private veilMat!: BABYLON.ShaderMaterial;
   private prevX = 0;
   private isPixel = false;
-  private consumed = false; // one-way: once returned, the portal is spent
   private ppAttached = false;
   private onModeChange?: (pixel: boolean) => void;
   private static readonly PORTAL_X = 192;
@@ -96,7 +93,6 @@ export class PixelPortal {
       effect.setFloat('dither', 0.09);
     };
     this.buildArch();
-    this.buildReturnDoor();
   }
 
   private emissive(name: string, hex: string) {
@@ -191,49 +187,6 @@ export class PixelPortal {
     return m;
   }
 
-  private buildReturnDoor() {
-    // Premium return door — brushed metal panels, inset glass, LED halo.
-    const X = 206, Z = 0;
-    const root = new BABYLON.TransformNode('returnDoorRoot', this.scene);
-    root.position.set(X, 0, Z);
-    root.parent = this.root;
-    root.setEnabled(false);
-    this.returnDoor = root as any;
-
-    const frameMat = new BABYLON.PBRMaterial('returnFrameMat', this.scene);
-    frameMat.albedoColor = new BABYLON.Color3(0.12, 0.15, 0.19);
-    frameMat.metallic = 0.9; frameMat.roughness = 0.25;
-    const glass = new BABYLON.PBRMaterial('returnGlass', this.scene);
-    glass.albedoColor = new BABYLON.Color3(0.03, 0.08, 0.11);
-    glass.metallic = 0.35; glass.roughness = 0.1;
-    glass.alpha = 0.7;
-
-    // Outer frame (four bevelled rails)
-    [[0, 2.9, 0.18, 0.22, 2.0], [0, 0.12, 0.18, 0.24, 2.0], [-0.98, 1.5, 0.18, 2.9, 0.2], [0.98, 1.5, 0.18, 2.9, 0.2]].forEach((s, i) => {
-      const rail = BABYLON.MeshBuilder.CreateBox('returnRail', { width: s[2], height: s[3], depth: s[4] }, this.scene);
-      rail.position.set(s[0], s[1], s[2] > 0.2 ? 0 : 0); rail.position.z = i < 2 ? 0 : 0;
-      rail.position.set(s[0], s[1], 0);
-      rail.material = frameMat; rail.parent = root; rail.receiveShadows = true;
-    });
-    // Door slab with inset glass window
-    const slab = BABYLON.MeshBuilder.CreateBox('returnSlab', { width: 0.12, height: 2.6, depth: 1.7 }, this.scene);
-    slab.position.set(0, 1.5, 0); slab.material = frameMat; slab.parent = root; slab.receiveShadows = true;
-    const win = BABYLON.MeshBuilder.CreateBox('returnWindow', { width: 0.14, height: 1.3, depth: 1.0 }, this.scene);
-    win.position.set(-0.02, 1.9, 0); win.material = glass; win.parent = root;
-    // Handle
-    const handle = BABYLON.MeshBuilder.CreateCylinder('returnHandle', { diameter: 0.06, height: 0.5, tessellation: 12 }, this.scene);
-    handle.position.set(-0.14, 1.4, 0.55); handle.material = frameMat; handle.parent = root;
-
-    this.returnGlow = this.emissive('returnGlow', '#ffd27f');
-    const halo = BABYLON.MeshBuilder.CreateTorus('returnHalo', { diameter: 2.6, thickness: 0.06, tessellation: 64 }, this.scene);
-    halo.rotation.x = Math.PI / 2; halo.rotation.z = Math.PI / 2;
-    halo.position.set(-0.1, 1.5, 0); halo.parent = root; halo.material = this.returnGlow;
-    // Hazard threshold strip on the floor
-    const strip = BABYLON.MeshBuilder.CreateBox('returnFloor', { width: 0.5, height: 0.03, depth: 2.2 }, this.scene);
-    strip.position.set(X, 0.02, Z);
-    strip.material = this.matsHazard(); strip.parent = this.root;
-  }
-
   public update(dt: number, player: BABYLON.Vector3) {
     // Pulse the arch glow + animate the holographic veil shader
     const t = performance.now() / 1000;
@@ -243,7 +196,8 @@ export class PixelPortal {
 
     // Transition the pixelation amount smoothly. Attach/detach the pass so it
     // costs nothing in standard mode, and use NEAREST sampling for crisp pixels.
-    this.amount += (this.targetAmount - this.amount) * Math.min(1, dt * 2.5);
+    this.amount += (this.targetAmount - this.amount) * Math.min(1, dt * 4.5);
+    if (Math.abs(this.amount - this.targetAmount) < 0.02) this.amount = this.targetAmount; // exact snap
     const needPP = this.amount > 0.001;
     if (needPP && !this.ppAttached) {
       this.camera.attachPostProcess(this.pixelPP, 0);
@@ -255,42 +209,26 @@ export class PixelPortal {
 
     const X = PixelPortal.PORTAL_X, Z = 0;
     const inOpening = Math.abs(player.z - Z) < PixelPortal.OPEN_Z;
-    // "Armed" when standing before the opening; the world only flips when the
-    // player actually crosses the arch plane (x < X → x >= X) inside the opening.
-    if (!this.consumed && (this.state === 'idle' || this.state === 'armed') && !this.isPixel) {
-      if (Math.abs(player.x - X) < 5 && inOpening && player.x < X) {
-        this.state = 'armed';
-        this.veil.setEnabled(true); // visible energy veil when approaching
-      } else if (!inOpening || player.x >= X) {
-        this.veil.setEnabled(false);
-      }
-      const crossed = this.prevX < X && player.x >= X && inOpening && this.state === 'armed';
-      if (crossed) {
-        this.state = 'engaged';
-        this.targetAmount = 1;
-        this.veil.setEnabled(false);
-        this.returnDoor.setEnabled(true);
-        const doorRoot = this.scene.getTransformNodeByName('returnDoorRoot');
-        if (doorRoot) doorRoot.setEnabled(true);
-        this.onModeChange?.(true);
-      }
-    } else if (this.state === 'pixel' || this.isPixel) {
-      // Walk back through the return door (toward level start) → standard world.
-      const crossedBack = this.prevX > 206 && player.x <= 206 && Math.abs(player.z) < 2;
-      if (crossedBack) {
-        this.state = 'returning';
-        this.isPixel = false;
-        this.consumed = true; // one-way only — portal can never re-activate
-        this.targetAmount = 0;
-        this.returnDoor.setEnabled(false);
-        const doorRoot = this.scene.getTransformNodeByName('returnDoorRoot');
-        if (doorRoot) doorRoot.setEnabled(false);
-        this.onModeChange?.(false);
-      }
+    const near = Math.abs(player.x - X) < 5 && inOpening;
+    const crossedForward = near && this.prevX < X && player.x >= X;
+    const crossedBack = near && this.prevX > X && player.x <= X;
+    this.veil.setEnabled(near);
+
+    // The single arch toggles pixel mode on EACH crossing, regardless of how
+    // far the fade progressed. Forward → pixel ON, backward → pixel OFF.
+    if (crossedForward && this.targetAmount === 0) {
+      this.targetAmount = 1;
+      this.state = 'engaged';
+      this.onModeChange?.(true);
+    } else if (crossedBack && this.targetAmount === 1) {
+      this.targetAmount = 0;
+      this.state = 'returning';
+      this.onModeChange?.(false);
     }
 
-    if (this.state === 'engaged' && this.amount > 0.97) { this.state = 'pixel'; this.isPixel = true; }
-    if (this.state === 'returning' && this.amount < 0.03) this.state = 'idle';
+    if (this.targetAmount === 1 && this.amount > 0.97) this.state = 'pixel';
+    if (this.targetAmount === 0 && this.amount < 0.03) this.state = 'idle';
+    this.isPixel = this.targetAmount === 1;
     this.prevX = player.x;
   }
 

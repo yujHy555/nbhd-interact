@@ -36,7 +36,7 @@ export class DevPanel {
         <button data-tp="0">Start</button><button data-tp="40">Ramp</button>
         <button data-tp="70">Road</button><button data-tp="100">Belt</button>
         <button data-tp="160">Contact</button><button data-tp="240">Extended</button>
-        <button data-tp="192">Pixel Door</button><button data-tp="206">Return</button>
+        <button data-tp="192">Pixel Door</button>
       </div>
       <div class="dev-section">TOGGLES</div>
       <div class="dev-grid">
@@ -60,7 +60,6 @@ export class DevPanel {
         // Portal buttons place the player BEFORE the threshold so walking
         // forward actually crosses it (and triggers the transition).
         if (b.textContent === 'Pixel Door') x = 188;   // portal plane at 192
-        if (b.textContent === 'Return') x = 209;       // return door at 206
         this.app.ppos.set(x, this.app.world.surfaceHeightAt(x, 0) + 0.2, 0);
         this.app.pvel.set(0, 0, 0);
         this.app.camera.snap(new BABYLON.Vector3(x, 1, 0));
