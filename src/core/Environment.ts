@@ -33,14 +33,13 @@ export class Environment {
     scene.ambientColor = new BABYLON.Color3(0.10, 0.12, 0.16);
 
     // Visible background: the full 4096×2048 panorama mapped directly onto a
-    // sphere (no cubemap stretching). Babylon's sphere UVs invert the image,
-    // so flip V to put the sky above the horizon.
+    // sphere (no cubemap stretching). Rotate the sphere 180° so the painted
+    // sky sits above the horizon — mesh-level flip, no UV hacks.
     const skyTex = new BABYLON.Texture(skyUrl, scene);
-    skyTex.vScale = -1;
-    skyTex.vOffset = 1;
-    skyTex.level = 1.15;
+    skyTex.level = 1.35;
     skyTex.anisotropicFilteringLevel = 8;
     const sky = BABYLON.MeshBuilder.CreateSphere('skyBox', { diameter: 1800, segments: 64 }, scene);
+    sky.rotation.x = Math.PI;
     const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
     skyMat.backFaceCulling = false;
     skyMat.disableLighting = true;

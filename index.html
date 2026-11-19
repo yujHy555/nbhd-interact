@@ -72,6 +72,25 @@
     #hud-right { position: absolute; bottom: 20px; right: 24px; z-index: 12; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
     #minimap { width: 244px; height: 152px; border-radius: 12px; border: 1px solid rgba(92,225,230,0.38); background: rgba(9,17,23,0.82); backdrop-filter: blur(8px); box-shadow: 0 10px 32px rgba(0,0,0,0.45); }
     #fps { font: 700 0.75rem/1 ui-monospace, monospace; color: var(--cyan); opacity: 0.85; background: rgba(12,24,32,0.6); padding: 5px 10px; border-radius: 6px; }
+    /* Always-visible main-menu button */
+    #btn-menu { position: absolute; bottom: 20px; left: 24px; z-index: 12; pointer-events: auto; display: inline-flex; align-items: center; gap: 9px; padding: 10px 18px; border-radius: 999px; border: 1px solid rgba(92,225,230,0.45); background: rgba(12,24,32,0.7); backdrop-filter: blur(8px); color: var(--paper); font: 700 0.76rem/1 'Segoe UI', sans-serif; letter-spacing: 0.13em; text-transform: uppercase; cursor: pointer; transition: transform 0.14s, background 0.14s; }
+    #btn-menu:hover { transform: translateY(-2px); background: rgba(92,225,230,0.18); }
+    #btn-menu .bars { display: flex; flex-direction: column; gap: 3px; }
+    #btn-menu .bars i { display: block; width: 14px; height: 2px; background: var(--cyan); border-radius: 2px; }
+
+    /* ---- Main menu ---- */
+    #mainmenu .panel { width: min(940px, 92vw); text-align: center; padding: 42px 56px 48px; }
+    #mainmenu .menu-logo { width: min(520px, 76vw); display: block; margin: 0 auto 18px; filter: drop-shadow(0 10px 34px rgba(92,225,230,0.35)); }
+    .menu-eyebrow { font-size: 0.72rem; letter-spacing: 0.42em; text-transform: uppercase; color: var(--cyan); margin-bottom: 8px; }
+    .menu-sub { font-size: 0.92rem; opacity: 0.7; margin: 0 0 26px; letter-spacing: 0.06em; }
+    .menu-btn { display: block; position: relative; width: min(420px, 80vw); margin: 12px auto; padding: 17px 26px; border-radius: 14px; font: 800 1rem/1 'Segoe UI', sans-serif; letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.05); color: var(--paper); transition: transform 0.16s, box-shadow 0.16s, background 0.16s; overflow: hidden; }
+    .menu-btn small { display: block; font-size: 0.58rem; letter-spacing: 0.22em; opacity: 0.65; margin-top: 6px; font-weight: 600; }
+    .menu-btn:hover { transform: translateY(-3px) scale(1.015); }
+    .menu-btn.primary { background: linear-gradient(135deg, #5ce1e6, #2aa9c4); color: #08262c; border: none; box-shadow: 0 12px 34px rgba(92,225,230,0.32); }
+    .menu-btn.primary:hover { box-shadow: 0 16px 46px rgba(92,225,230,0.5); }
+    .menu-btn::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,0.22) 50%, transparent 60%); transform: translateX(-120%); transition: transform 0.5s; }
+    .menu-btn:hover::after { transform: translateX(120%); }
+    .menu-foot { margin-top: 22px; font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.45; }
   </style>
 </head>
 <body>
@@ -84,6 +103,7 @@
       <div class="hud-stat" id="pickup-count">COLLECTIBLES 0 / 16</div>
     </div>
     <div id="controls-hint"><kbd>A</kbd><kbd>D</kbd> move · <kbd>W</kbd><kbd>S</kbd> depth · <kbd>SPACE</kbd> jump · <kbd>WASD</kbd> / gamepad</div>
+    <button id="btn-menu"><span class="bars"><i></i><i></i><i></i></span> Main Menu</button>
     <div id="hud-right">
       <canvas id="minimap" width="488" height="304"></canvas>
       <div id="fps">60 FPS</div>
@@ -97,16 +117,41 @@
     <div class="loader-text">Preparing the neighborhood…</div>
   </div>
 
-  <!-- Welcome / landing overlay -->
-  <div id="welcome" class="overlay visible">
+  <!-- Main menu -->
+  <div id="mainmenu" class="overlay visible">
     <div class="panel">
-      <img class="logo-strip" src="/logos/NBHD_interact_logo_01.png" alt="NBHD interact" />
-      <div class="eyebrow">Interactive Experience</div>
-      <h1>Welcome to the neighborhood.</h1>
-      <p>We build worlds you can walk into. Spin the hero on the turntable, then step out and explore — the whole site is a living 3D environment.</p>
-      <div class="row">
-        <button class="btn primary" id="btn-explore">Meet the Crew &amp; Explore →</button>
+      <img class="menu-logo" src="/logos/NBHD_interact_logo_01.png" alt="NBHD interact" />
+      <div class="menu-eyebrow">Interactive Experience</div>
+      <p class="menu-sub">A living 3D neighborhood — explore it your way.</p>
+      <button class="menu-btn primary" id="btn-play">Play<small>Step into the neighborhood</small></button>
+      <button class="menu-btn" id="btn-controls">Controls<small>Keyboard &amp; gamepad</small></button>
+      <button class="menu-btn" id="btn-credits">Credits<small>Built with Babylon.js</small></button>
+      <div class="menu-foot">Real-time 3D · Skinned characters · Cinematic lighting</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div id="controls" class="overlay">
+    <div class="panel">
+      <div class="eyebrow">Field Guide</div>
+      <h2>Controls</h2>
+      <div class="feature-grid">
+        <div class="card"><h3>Move</h3><p><kbd>W A S D</kbd> or arrow keys · gamepad LEFT stick</p></div>
+        <div class="card"><h3>Look</h3><p>Gamepad RIGHT stick orbits the camera</p></div>
+        <div class="card"><h3>Jump</h3><p><kbd>SPACE</kbd> · double-jump for extra height</p></div>
+        <div class="card"><h3>Sprint</h3><p>Hold <kbd>SHIFT</kbd> · gamepad shoulder buttons</p></div>
       </div>
+      <div class="row"><button class="btn ghost" id="btn-controls-close">Back →</button></div>
+    </div>
+  </div>
+
+  <!-- Credits -->
+  <div id="credits" class="overlay">
+    <div class="panel">
+      <div class="eyebrow">Made With</div>
+      <h2>Babylon.js</h2>
+      <p>Powered by a real Mixamo-skinned character, PBR materials, an equirectangular sky, custom emission shaders and a deterministic kinematic controller.</p>
+      <div class="row"><button class="btn ghost" id="btn-credits-close">Back →</button></div>
     </div>
   </div>
 

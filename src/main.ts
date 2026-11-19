@@ -12,6 +12,7 @@ import { Materials } from './world/Materials';
 import { World, Pickup, ZoneMarker, SlopeCollider } from './world/World';
 import { UI } from './ui/UI';
 import { Minimap } from './ui/Minimap';
+import { Drone } from './world/Drone';
 
 type Mode = 'welcome' | 'explore';
 
@@ -31,6 +32,9 @@ class App {
   private world!: World;
   private ui!: UI;
   private minimap!: Minimap;
+  private drone!: Drone;
+  private exploreTime = 0;
+  private droneTriggered = false;
   private mode: Mode = 'welcome';
   private facing = Math.PI / 2; // screen-right (+X) at start
   private lastTime = 0;
@@ -67,7 +71,10 @@ class App {
     window.addEventListener('pointerdown', () => this.audio.unlock(), { once: true });
     window.addEventListener('keydown', () => this.audio.unlock(), { once: true });
 
-    this.ui = new UI(DEFAULT_COLORS, { explore: () => this.startExploring() });
+    this.ui = new UI(DEFAULT_COLORS, {
+      play: () => this.startExploring(),
+      menu: () => this.returnToMenu(),
+    });
     this.ui.setLoading(12);
 
     this.havok = new HavokWorld(this.scene);
@@ -120,6 +127,9 @@ class App {
     arc.upperRadiusLimit = 26;
     arc.panningSensibility = 0;
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
+
+    // Cinematic scan drone — one-shot encounter 30 s into the level
+    this.createDrone();
 
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
@@ -216,14 +226,34 @@ class App {
     });
   }
 
+  private createDrone() {
+    this.drone?.dispose();
+    this.drone = new Drone(this.scene, () => this.audio.zone());
+  }
+
   private startExploring() {
     this.mode = 'explore';
+    this.exploreTime = 0;
+    this.droneTriggered = false;
+    this.createDrone(); // fresh one-shot encounter for this playthrough
     this.ppos.set(2.4, 0, 0);
     this.pvel.set(0, 0, 0);
     this.grounded = true;
     this.facing = Math.PI / 2;
     this.character.headingPivot.rotation.y = Math.PI / 2;
     this.camera.snap(new BABYLON.Vector3(2.4, 1, 0));
+  }
+
+  private returnToMenu() {
+    this.drone.dispose();
+    this.mode = 'welcome';
+    this.exploreTime = 0;
+    this.droneTriggered = false;
+    this.ppos.set(0, 0, 0);
+    this.pvel.set(0, 0, 0);
+    this.character.setPosition(0, 0, 0);
+    this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
+    this.ui.setZone('WELCOME');
   }
 
   /** Exact surface height of a ramp at world X. */
@@ -252,6 +282,16 @@ class App {
       best = h;
     }
     return best;
+  }
+
+  /** Slope pitch under the player's feet (radians). */
+  private slopeAngleAt(x: number, z: number, feetY: number): number {
+    for (const s of this.world.slopes) {
+      if (x < s.x - s.w / 2 || x > s.x + s.w / 2 ||
+          z < s.z - s.d / 2 || z > s.z + s.d / 2) continue;
+      if (Math.abs(this.slopeHeight(s, x) - feetY) < 0.22) return Math.atan2(s.y1 - s.y0, s.w);
+    }
+    return 0;
   }
 
   /** Solid box overlapping the player's body → horizontal move blocked.
@@ -377,10 +417,10 @@ class App {
     this.character.setFlip(0);
     if (landed) { this.audio.land(6); this.character.landingImpact(-8); this.camera.punch(3); }
 
-    // Visual root sits exactly at the FEET surface. No body tilt on slopes —
-    // rotating the body dipped the shoes below the surface and looked odd.
+    // Visual root at the FEET surface, body tilted to the slope with dynamic
+    // compensation so the shoes never sink below the inclined plane.
     this.character.setPosition(p.x, p.y, p.z);
-    this.character.setSlopeAngle(0);
+    this.character.alignToSlope(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0, p.y);
 
     // ---- Facing ----
     // The Mixamo rig faces +Z at rotation 0 (verified visually: at yaw 0 the
@@ -425,11 +465,17 @@ class App {
       this.updateController(dt);
       this.world.update(dt, this.ppos.x);
       this.camera.update(dt, new BABYLON.Vector3(this.ppos.x, this.ppos.y + 1, this.ppos.z), this.pvel.x * 0.3);
+      this.exploreTime += dt;
+      if (!this.droneTriggered && this.exploreTime >= 30) {
+        this.droneTriggered = true;
+        this.drone.trigger(new BABYLON.Vector3(this.ppos.x, this.ppos.y + 1, this.ppos.z));
+      }
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
     // Keep the directional light's shadow frustum centred on the player so
     // cast shadows stay natural and visible everywhere in the level.
     this.env.sun.position.set(pp.x + 60, 120, -60);
+    this.drone.update(dt, pp);
     this.polish.update(dt, pp, pp.y, this.mode === 'explore' && this.pvel.length() > 0.5);
     this.minimap?.update(pp.x, pp.z, this.mode === 'welcome' ? Math.PI / 2 : this.facing);
     this.fpsAcc += dt; this.fpsFrames++;

@@ -427,6 +427,23 @@ export class Character {
    *  Applied above the yaw pivot so it is a true world-space tilt. */
   public setSlopeAngle(angle: number) { this.slopePivot.rotation.z = -angle; }
 
+  /** Tilt the body to an incline while keeping the shoes exactly on the
+   *  surface. Tilting around the root dips one shoe; measure the real skinned
+   *  feet afterwards and lift the root by the exact deficit. */
+  public alignToSlope(angle: number, surfaceY: number) {
+    // Keep the torso upright — only the feet are planted on the surface via
+    // the root lift below. Tilting the whole body looks like falling over.
+    this.slopePivot.rotation.z = 0;
+    if (!this.mixamo) return;
+    let low = Infinity;
+    for (const m of this.mixamo.root.getChildMeshes(false)) {
+      m.computeWorldMatrix(true);
+      low = Math.min(low, m.getBoundingInfo().boundingBox.minimumWorld.y);
+    }
+    const deficit = surfaceY - low;
+    if (deficit > 0 && deficit < 0.5) this.root.position.y += deficit;
+  }
+
   /** Set the flip rotation about the waist (radians). */
   public setFlip(angle: number) { this.flipPivot.rotation.x = angle; }
   public getFlip() { return this.flipPivot.rotation.x; }
