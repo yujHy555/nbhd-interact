@@ -74,16 +74,17 @@ export class GameAudio {
     if (surface === 'metal') this.tone(1800, 0.04, 'triangle', 0.03, 1200);
   }
 
-  /** Drive footsteps from locomotion phase — call every frame with speed + cycle phase. */
+  /** Drive footsteps from the REAL Mixamo cycle phase (0..1). Two clean
+   *  footfalls per cycle — one at 0.05, one at 0.55 — with slight variation. */
   public updateFootsteps(dt: number, speed: number, phase: number, grounded: boolean, state: string) {
-    if (!grounded || speed < 0.4 || (state !== 'walk' && state !== 'run')) { this.footTimer = 0; return; }
-    // Two footfalls per full cycle; detect crossing of stride boundaries
-    const stride = state === 'run' ? 11 : 7;
-    const cycle = phase * stride / Math.PI; // ~2 steps per cycle
-    const stepIndex = Math.floor(cycle);
+    if (!grounded || speed < 0.4 || (state !== 'walk' && state !== 'run')) { this.footTimer = 0; this.lastStep = -1; return; }
+    // phase is normalised 0..1 of the active clip; two foot plants per cycle.
+    const stepIndex = Math.floor(phase * 2);
     if (stepIndex !== this.lastStep) {
       this.lastStep = stepIndex;
-      this.footstep('concrete', state === 'run' ? 1.15 : 0.85);
+      const surface = 'concrete';
+      const intensity = state === 'run' ? 1.2 : 0.9;
+      this.footstep(surface, intensity * (0.94 + Math.random() * 0.12)); // natural variation
     }
     void dt;
   }
@@ -96,6 +97,31 @@ export class GameAudio {
   }
   public zone() { [523, 659, 784].forEach((f, i) => setTimeout(() => this.tone(f, 0.18, 'triangle', 0.09), i * 70)); }
   public uiClick() { this.tone(700, 0.05, 'square', 0.06, 900); }
+  /** Cinematic AAA button sounds — distinct tones per button role. */
+  public button(kind: 'play' | 'menu' | 'collapse' | 'nav' | 'toggle' = 'nav') {
+    switch (kind) {
+      case 'play':
+        [523, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.14, 'triangle', 0.09, f * 1.5), i * 60));
+        this.noise(0.12, 0.04, 3200);
+        break;
+      case 'collapse':
+        this.tone(220, 0.5, 'sawtooth', 0.13, 55);
+        this.noise(0.5, 0.1, 600, 'lowpass');
+        [880, 660, 440].forEach((f, i) => setTimeout(() => this.tone(f, 0.1, 'square', 0.05), i * 90));
+        break;
+      case 'menu':
+        this.tone(400, 0.1, 'triangle', 0.08, 300);
+        this.tone(300, 0.12, 'sine', 0.06, 200);
+        break;
+      case 'toggle':
+        this.tone(620, 0.05, 'square', 0.05, 880);
+        this.tone(880, 0.04, 'triangle', 0.03);
+        break;
+      default:
+        this.tone(760, 0.045, 'triangle', 0.05, 1100);
+        this.noise(0.03, 0.02, 2800);
+    }
+  }
   public whoosh() { this.noise(0.18, 0.06, 1400, 'bandpass'); }
 
   public dispose() { this.ctx?.close(); this.ctx = null; }

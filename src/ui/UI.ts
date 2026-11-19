@@ -4,11 +4,15 @@ type Handler = () => void;
 export class UI {
   private onPlay: Handler;
   private onMenu: Handler;
+  private onCollapse: Handler;
+  private sfx: (kind: 'play' | 'menu' | 'collapse' | 'nav' | 'toggle') => void;
 
-  constructor(colors: { [k: string]: any }, handlers: { play: Handler; menu: Handler }) {
+  constructor(colors: { [k: string]: any }, handlers: { play: Handler; menu: Handler; collapse?: Handler; sfx?: (kind: any) => void }) {
     void colors;
     this.onPlay = handlers.play;
     this.onMenu = handlers.menu;
+    this.onCollapse = handlers.collapse ?? (() => {});
+    this.sfx = handlers.sfx ?? (() => {});
     this.wire();
   }
 
@@ -24,20 +28,26 @@ export class UI {
 
   private wire() {
     this.el('btn-play')?.addEventListener('click', () => {
-      this.hide('mainmenu');
-      this.onPlay();
+      this.sfx('play'); this.hide('mainmenu'); this.onPlay();
     });
-    this.el('btn-controls')?.addEventListener('click', () => this.show('controls'));
-    this.el('btn-controls-close')?.addEventListener('click', () => this.hide('controls'));
-    this.el('btn-credits')?.addEventListener('click', () => this.show('credits'));
-    this.el('btn-credits-close')?.addEventListener('click', () => this.hide('credits'));
+    this.el('btn-controls')?.addEventListener('click', () => { this.sfx('nav'); this.show('controls'); });
+    this.el('btn-controls-close')?.addEventListener('click', () => { this.sfx('nav'); this.hide('controls'); });
+    this.el('btn-credits')?.addEventListener('click', () => { this.sfx('nav'); this.show('credits'); });
+    this.el('btn-credits-close')?.addEventListener('click', () => { this.sfx('nav'); this.hide('credits'); });
     this.el('btn-menu')?.addEventListener('click', () => {
+      this.sfx('menu');
       this.hide('whatwedo'); this.hide('contact'); this.hide('controls'); this.hide('credits');
       this.show('mainmenu');
       this.onMenu();
     });
-    this.el('btn-wwd-close')?.addEventListener('click', () => this.hide('whatwedo'));
-    this.el('btn-contact-close')?.addEventListener('click', () => this.hide('contact'));
+    this.el('btn-collapse')?.addEventListener('click', () => {
+      this.sfx('collapse');
+      const fx = this.el('collapse-fx');
+      if (fx) { fx.classList.remove('active'); void fx.offsetWidth; fx.classList.add('active'); }
+      this.onCollapse();
+    });
+    this.el('btn-wwd-close')?.addEventListener('click', () => { this.sfx('nav'); this.hide('whatwedo'); });
+    this.el('btn-contact-close')?.addEventListener('click', () => { this.sfx('nav'); this.hide('contact'); });
   }
 
   public showMainMenu() {

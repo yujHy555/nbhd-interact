@@ -38,31 +38,64 @@ uniform float strength;
 uniform vec3 beamColor;
 uniform vec3 playerPos;
 uniform float scanSpeed;
+
+// cheap hash / value-noise
+float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float noise(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x), f.y);
+}
 void main(void) {
-  // Downward-travelling scan bands
-  float bands = sin(vUV.y * 38.0 - time * scanSpeed) * 0.5 + 0.5;
-  bands = pow(bands, 4.0);
-  // World-space emission grid projected down the beam (sci-fi volumetric map)
-  vec2 gridUV = vPosW.xz * 2.2;
-  vec2 g = abs(fract(gridUV) - 0.5);
-  float grid = smoothstep(0.44, 0.5, max(g.x, g.y));
-  // Fine high-frequency scanlines
-  float lines = sin(vUV.y * 160.0 - time * 22.0) * 0.5 + 0.5;
-  // Sweeping scan disc that travels down the beam onto the player
-  float sweepY = fract(time * 0.35);
-  float sweep = exp(-pow((vUV.y - sweepY) * 9.0, 2.0));
-  // Fresnel edge glow
-  vec3 viewDir = normalize(cameraPosition - vPosW);
-  float fres = pow(1.0 - abs(dot(normalize(vNormalW), viewDir)), 2.0);
-  // Bright focus hotspot where the beam meets the player's body
+  vec3 N = normalize(vNormalW);
+  vec3 V = normalize(cameraPosition - vPosW);
+  float fres = pow(1.0 - abs(dot(N, V)), 2.6);           // rim glow
+  float y = vUV.y;                                        // 0 = top, 1 = base
+
+  // 1) Volumetric noise plasmaCurling inside the cone
+  float plasma = noise(vec2(vUV.x*7.0, y*5.0 - time*1.6));
+  plasma += 0.5*noise(vec2(vUV.x*15.0+2.3, y*11.0 - time*2.7));
+  plasma = pow(plasma*0.66, 2.0);
+
+  // 2) Travelling emission bands (energy pulses down the beam)
+  float bands = sin(y*46.0 - time*scanSpeed)*0.5+0.5;
+  bands = pow(bands, 6.0);
+
+  // 3) Fine scanning micro-lines
+  float lines = sin(y*220.0 - time*30.0)*0.5+0.5;
+  lines = pow(lines, 8.0);
+
+  // 4) Rotating holographic data rings (polar coordinates)
+  vec2 pc = vUV*2.0-1.0;
+  float ang = atan(pc.y,pc.x);
+  float rad = length(pc);
+  float rings = sin(rad*26.0 - time*5.0 + ang*2.0)*0.5+0.5;
+  rings = pow(rings, 10.0) * smoothstep(0.9,0.1,rad);
+
+  // 5) World-space projection grid aligned to the player
+  vec2 g = abs(fract((vPosW.xz - playerPos.xz)*2.6)-0.5);
+  float grid = smoothstep(0.45,0.5,max(g.x,g.y));
+
+  // 6) Sweeping scan disc that hits the player
+  float sweepY = fract(time*0.42);
+  float sweep = exp(-pow((y-sweepY)*14.0,2.0));
+
+  // 7) Core hotspot at the player's position
   float dxz = length(vPosW.xz - playerPos.xz);
-  float focus = exp(-dxz * dxz * 3.0) * (1.0 - vUV.y);
-  // Vertical fade so it melts into the floor
-  float fade = smoothstep(0.0, 0.18, vUV.y) * (1.0 - smoothstep(0.9, 1.0, vUV.y));
-  float pulse = 0.82 + 0.18 * sin(time * 8.0);
-  float a = (0.10 + bands * 0.35 + grid * 0.30 + lines * 0.05 + fres * 0.5 + sweep * 0.5 + focus * 0.6) * fade * strength * pulse;
-  vec3 c = beamColor * (0.7 + bands * 0.8 + grid * 1.4 + fres * 1.2 + sweep * 1.6 + focus * 2.0);
-  gl_FragColor = vec4(c, clamp(a, 0.0, 1.0));
+  float focus = exp(-dxz*dxz*4.0) * (0.35+0.65*(1.0-y));
+
+  float body = 0.06 + plasma*0.55 + bands*0.5 + lines*0.12 + rings*0.35 + grid*0.3 + fres*0.9 + sweep*0.8 + focus*1.1;
+  float fade = smoothstep(0.0,0.12,y) * (1.0 - smoothstep(0.88,1.0,y));
+  float pulse = 0.9 + 0.1*sin(time*10.0);
+  float a = body * fade * strength * pulse;
+
+  // Hollywood colour ramp: deep crimson core → hot red → white-hot highlights
+  vec3 deep = beamColor*0.35;
+  vec3 hot  = beamColor*1.6;
+  vec3 white = vec3(1.0,0.85,0.88);
+  vec3 c = mix(deep, hot, clamp(plasma+bands+sweep,0.0,1.0));
+  c = mix(c, white, clamp(rings*0.8 + fres*0.5 + focus*0.9 + pow(lines,2.0)*0.4, 0.0, 1.0));
+  c += beamColor*fres*1.2;
+  gl_FragColor = vec4(c, clamp(a,0.0,1.0));
 }`;
 
 // ---- Emission grid projected onto the player's body ------------------------
@@ -87,18 +120,34 @@ varying vec3 vNormalW;
 uniform float time;
 uniform float strength;
 uniform vec3 beamColor;
+float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 void main(void) {
-  // World-space emission grid mapped onto the character's silhouette
-  vec2 g = abs(fract(vPosW.xz * 3.0) - 0.5);
-  float gridX = smoothstep(0.46, 0.5, g.x);
-  float gridY = smoothstep(0.46, 0.5, abs(fract(vPosW.y * 3.0) - 0.5));
-  float grid = max(gridX, gridY);
-  // Horizontal scanner sweeping up the body
-  float sweep = exp(-pow((fract(vPosW.y * 0.5 - time * 0.4) - 0.5) * 12.0, 2.0));
-  float fres = pow(1.0 - abs(dot(normalize(vNormalW), normalize(cameraPosition - vPosW))), 2.0);
-  float pulse = 0.8 + 0.2 * sin(time * 9.0);
-  float a = (grid * 0.55 + sweep * 0.7 + fres * 0.25) * strength * pulse;
-  gl_FragColor = vec4(beamColor * (grid * 1.5 + sweep * 2.2 + 0.4), clamp(a, 0.0, 0.85));
+  vec3 N = normalize(vNormalW);
+  vec3 V = normalize(cameraPosition - vPosW);
+  float fres = pow(1.0 - abs(dot(N,V)), 2.2);
+
+  // Tri-planar holographic grid wrapped on the body
+  vec2 gx = abs(fract(vPosW.zy*4.0)-0.5);
+  vec2 gy = abs(fract(vPosW.xz*4.0)-0.5);
+  vec2 gz = abs(fract(vPosW.xy*4.0)-0.5);
+  float grid = max(max(smoothstep(0.47,0.5,max(gx.x,gx.y))*abs(N.x),
+                       smoothstep(0.47,0.5,max(gy.x,gy.y))*abs(N.y)),
+                       smoothstep(0.47,0.5,max(gz.x,gz.y))*abs(N.z));
+
+  // Multiple scan sweeps climbing the body at different speeds
+  float s1 = exp(-pow((fract(vPosW.y*0.55 - time*0.5)-0.5)*16.0,2.0));
+  float s2 = exp(-pow((fract(vPosW.y*0.9  - time*0.8)-0.5)*22.0,2.0));
+
+  // Data-noise flicker + digital glitch bands
+  float flicker = 0.85 + 0.15*hash(vec2(floor(vPosW.y*30.0), floor(time*24.0)));
+  float glitch = step(0.985, hash(vec2(floor(time*14.0), floor(vPosW.y*12.0))));
+
+  float pulse = 0.85 + 0.15*sin(time*11.0);
+  float a = (grid*0.5 + s1*0.9 + s2*0.6 + fres*0.35 + glitch*0.5) * strength * pulse * flicker;
+
+  vec3 c = beamColor*(grid*1.4 + s1*2.4 + s2*1.8 + 0.35);
+  c = mix(c, vec3(1.0,0.92,0.94), clamp(s1*0.8+fres*0.5+glitch,0.0,1.0));
+  gl_FragColor = vec4(c, clamp(a,0.0,0.92));
 }`;
 
 type Phase = 'dormant' | 'arrive' | 'hover' | 'scan' | 'depart' | 'done';
@@ -118,6 +167,7 @@ export class Drone {
   private ringMat!: BABYLON.StandardMaterial;
   private halo!: BABYLON.Mesh;
   private haloMat!: BABYLON.StandardMaterial;
+  private hudRings: BABYLON.Mesh[] = [];
   private bodyGrid!: BABYLON.Mesh;      // emission grid wrapped on the player
   private bodyGridMat!: BABYLON.ShaderMaterial;
   private scanLight!: BABYLON.SpotLight; // real light shining onto the player
@@ -280,6 +330,16 @@ export class Drone {
     this.cone.isPickable = false;
     this.cone.setEnabled(false);
 
+    // Holographic HUD rings that lock onto the player during the scan
+    for (let i = 0; i < 3; i++) {
+      const hr = BABYLON.MeshBuilder.CreateTorus('droneHudRing', { diameter: 2.2 + i * 0.5, thickness: 0.025, tessellation: 64 }, this.scene);
+      hr.material = this.emissive('droneHudMat', i === 1 ? '#ff5577' : '#ff2a3a');
+      hr.isPickable = false;
+      hr.parent = this.root;
+      hr.setEnabled(false);
+      this.hudRings.push(hr);
+    }
+
     // Expanding ground ring under the target
     this.ringMat = this.emissive('droneRingMat', '#ff2a3a');
     this.ringMat.alpha = 0.85;
@@ -367,6 +427,9 @@ export class Drone {
     if (this.phase === 'arrive') {
       const t = Math.min(1, this.phaseT / 3.4);
       const k = ease(t);
+      // Recompute hover target each frame so a moving player is tracked, then
+      // smooth-follow it — prevents the snap when hoverPos changes.
+      this.hoverPos.set(player.x + 0.5, player.y + 3.4, player.z + 1.2);
       this.root.position.copyFrom(BABYLON.Vector3.Lerp(this.startPos, this.hoverPos, k));
       // small hovering bob + banking into the approach
       this.root.position.y += Math.sin(this.time * 3) * 0.16 * (1 - k);
@@ -375,10 +438,8 @@ export class Drone {
       this.root.rotation.y = Math.PI + (1 - k) * 0.5;
       if (t >= 1) { this.phase = 'hover'; this.phaseT = 0; }
     } else if (this.phase === 'hover') {
-      this.hoverPos.set(player.x + 0.5, player.y + 3.4, player.z + 1.2);
-      this.root.position.x += (this.hoverPos.x - this.root.position.x) * Math.min(1, dt * 2.2);
-      this.root.position.y = this.hoverPos.y + Math.sin(this.time * 2.2) * 0.13;
-      this.root.position.z += (this.hoverPos.z - this.root.position.z) * Math.min(1, dt * 2.2);
+      this.hoverPos.set(player.x + 0.5, player.y + 3.4 + Math.sin(this.time * 2.2) * 0.13, player.z + 1.2);
+      this.follow(this.hoverPos, dt, 3.2);
       this.root.rotation.z = Math.sin(this.time * 1.8) * 0.04;
       if (this.phaseT > 1.0) {
         this.phase = 'scan'; this.phaseT = 0;
@@ -388,10 +449,8 @@ export class Drone {
         this.onCue?.();
       }
     } else if (this.phase === 'scan') {
-      // Track the player during the sweep
-      this.root.position.x += (player.x + 0.4 - this.root.position.x) * Math.min(1, dt * 2.4);
-      this.root.position.y = player.y + 3.4 + Math.sin(this.time * 2.6) * 0.08;
-      this.root.position.z += (player.z + 0.9 - this.root.position.z) * Math.min(1, dt * 2.4);
+      // Smoothly track the player during the sweep — no position snapping.
+      this.follow(new BABYLON.Vector3(player.x + 0.4, player.y + 3.4 + Math.sin(this.time * 2.6) * 0.08, player.z + 0.9), dt, 3.8);
       this.root.rotation.z = Math.sin(this.time * 3) * 0.03;
 
       const T = 6.0;
@@ -420,6 +479,16 @@ export class Drone {
         if (this.bodyGridMat) this.bodyGridMat.setFloat('strength', beam);
       }
 
+      // Holographic HUD rings — rotating, counter-spinning lock-on reticles
+      for (let i = 0; i < this.hudRings.length; i++) {
+        const hr = this.hudRings[i];
+        hr.setEnabled(beam > 0.02);
+        hr.position.set(player.x - this.root.position.x, player.y + 0.9 + (i - 1) * 0.35, player.z - this.root.position.z);
+        hr.rotation.x = Math.PI / 2 + Math.sin(this.time * (0.7 + i * 0.3)) * 0.12;
+        hr.rotation.z = this.time * (i % 2 ? -0.9 : 1.2);
+        hr.scaling.setAll(beam * (0.95 + Math.sin(this.time * 3 + i) * 0.04));
+      }
+
       // Ground ring + secondary rings expanding under the target
       const rp = (this.phaseT % 1.0) / 1.0;
       this.ring.position.set(player.x, player.y + 0.04, player.z);
@@ -432,6 +501,7 @@ export class Drone {
         this.halo.setEnabled(false);
         this.scanLight.intensity = 0;
         if (this.bodyGrid) this.bodyGrid.setEnabled(false);
+        for (const hr of this.hudRings) hr.setEnabled(false);
         this.phase = 'depart'; this.phaseT = 0;
         this.departPos = this.root.position.clone();
         this.onCue?.();
@@ -447,6 +517,17 @@ export class Drone {
       this.ledMat.emissiveColor.scaleInPlace(1 - dt * 0.8);
       if (t >= 1) this.dispose();
     }
+  }
+
+  private smoothVel = BABYLON.Vector3.Zero();
+
+  /** Critically-damped follow — smooth, professional movement with no snap. */
+  private follow(target: BABYLON.Vector3, dt: number, speed = 4.5) {
+    const to = target.subtract(this.root.position);
+    const desired = to.scale(speed);
+    // Exponential smoothing of velocity (no teleporting on target changes)
+    this.smoothVel = BABYLON.Vector3.Lerp(this.smoothVel, desired, Math.min(1, dt * 3.5));
+    this.root.position.addInPlace(this.smoothVel.scale(dt));
   }
 
   private departPos = BABYLON.Vector3.Zero();

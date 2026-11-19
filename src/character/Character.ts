@@ -286,7 +286,19 @@ export class Character {
 
   // ---------------------------------------------------------------- public API
   public getMeshes() { return this.meshes; }
-  public getCyclePhase() { return this.phase; }
+  /** Normalised cycle phase (0..1) of the ACTIVE locomotion clip — used to
+   *  trigger footsteps exactly on the animated foot plants. */
+  public getCyclePhase() {
+    if (this.mixamo) {
+      const g = this.mixamo.animationGroups.find((x) => x.isPlaying);
+      if (g && g.to > g.from && g.animatables.length) {
+        const frame = g.animatables[0].masterFrame;
+        return (((frame - g.from) % (g.to - g.from)) + (g.to - g.from)) % (g.to - g.from) / (g.to - g.from);
+      }
+      return 0;
+    }
+    return this.phase;
+  }
   public setPosition(x: number, y: number, z: number) { this.root.position.set(x, y, z); }
   public get position() { return this.root.position; }
 
@@ -462,6 +474,20 @@ export class Character {
     const slope = this.smoothSlope;
     const onSlope = Math.abs(slope) > 0.02;
 
+    // Tilt the whole rig to the slope normal (feet conform perfectly), then
+    // counter-tilt the upper body so the torso stays upright. Applied via a
+    // stable TransformNode — reliable, unlike animating bone quaternions.
+    this.slopePivot.rotation.z = slope;
+    // Counter-rotate the spine/chest so the torso reads upright on the slope.
+    for (const mesh of this.mixamo.root.getChildMeshes(false)) {
+      const sk = (mesh as BABYLON.Mesh).skeleton;
+      if (!sk) continue;
+      for (const n of ['mixamorig:Spine', 'mixamorig:Spine1', 'mixamorig:Spine2']) {
+        const b = sk.bones.find((x) => x.name === n);
+        if (b) b.setRotationMatrix(BABYLON.Matrix.RotationZ(-slope));
+      }
+    }
+
     let minSoleErr = Infinity;
     for (const mesh of this.mixamo.root.getChildMeshes(false)) {
       const sk = (mesh as BABYLON.Mesh).skeleton;
@@ -471,12 +497,6 @@ export class Character {
       for (const name of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
         const bone = sk.bones.find((b) => b.name === name);
         if (!bone) continue;
-        if (onSlope && bone.rotationQuaternion) {
-          const pitch = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Z, slope);
-          const parent = bone.getParent();
-          const pq = parent ? BABYLON.Quaternion.FromRotationMatrix(parent.getAbsoluteMatrix()) : BABYLON.Quaternion.Identity();
-          bone.rotationQuaternion = BABYLON.Quaternion.Inverse(pq).multiply(pitch).multiply(pq).multiply(bone.rotationQuaternion);
-        }
         sk.computeAbsoluteMatrices();
         const wp = BABYLON.Vector3.TransformCoordinates(bone.getAbsolutePosition(), mesh.getWorldMatrix());
         const ground = this.groundSampler(wp.x, wp.z);
@@ -484,12 +504,23 @@ export class Character {
       }
     }
 
-    // Smoothly drive the extra lift toward the needed correction. A damped
-    // follow (not an instant snap) keeps the body perfectly smooth while the
-    // shoes settle onto the incline within a few frames.
-    const target = onSlope && isFinite(minSoleErr) ? Math.max(0, 0.02 - minSoleErr) : 0;
-    this.footLift += (target - this.footLift) * Math.min(1, dt * 14);
-    this.root.position.y += this.footLift;
+    // Hard anti-penetration constraint: if any sole is below the sampled
+    // surface, lift the root by the exact deficit immediately — this is the
+    // only way to guarantee zero sinking while the surface rises under a
+    // climbing foot. Damping caused the foot to lag and clip, so it's gone.
+    // Gated to slopes only → flat running stays perfectly smooth.
+    if (onSlope && isFinite(minSoleErr)) {
+      const penetration = -minSoleErr; // >0 means sole is below the surface
+      if (penetration > 0) {
+        this.footLift = Math.min(0.3, penetration) + 0.012;
+        this.root.position.y += this.footLift;
+      } else {
+        this.footLift += (0 - this.footLift) * Math.min(1, dt * 6);
+        if (this.footLift > 0) this.root.position.y += this.footLift;
+      }
+    } else {
+      this.footLift = 0;
+    }
   }
 
   /** Set the flip rotation about the waist (radians). */

@@ -19,6 +19,12 @@ export class World {
     { x: 0, name: 'WELCOME' },
     { x: 78, name: 'WHAT WE DO' },
     { x: 156, name: 'CONTACT' },
+    { x: 250, name: 'INNOVATION' },
+    { x: 360, name: 'DISCOVERY' },
+    { x: 470, name: 'HORIZON' },
+    { x: 580, name: 'FRONTIER' },
+    { x: 700, name: 'SUMMIT' },
+    { x: 820, name: 'BEYOND' },
   ];
   private scene: BABYLON.Scene;
   private mats: Materials;
@@ -123,16 +129,21 @@ export class World {
     deck.receiveShadows = true;
     this.colliders.push({ x, y: top / 2, z, w, h: top, d });
 
-    // Belt material with animated scrolling stripes
+    // Belt — wider slats on a rich rubber surface with subtle tread speckle.
     const cv = document.createElement('canvas');
     cv.width = 128; cv.height = 128;
     const ctx = cv.getContext('2d')!;
-    ctx.fillStyle = '#2b3238'; ctx.fillRect(0, 0, 128, 128);
+    ctx.fillStyle = '#24292e'; ctx.fillRect(0, 0, 128, 128); // dark rubber
+    // fine rubber grain
+    for (let i = 0; i < 1400; i++) {
+      ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.05)';
+      ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+    }
     for (let i = 0; i < 128; i += 32) {
-      ctx.fillStyle = '#48525b';
-      ctx.fillRect(i, 0, 6, 128);
-      ctx.fillStyle = '#1c2126';
-      ctx.fillRect(i + 6, 0, 4, 128);
+      ctx.fillStyle = '#586571';            // slightly wider bright slat
+      ctx.fillRect(i, 0, 9, 128);
+      ctx.fillStyle = '#15191d';            // soft shadow groove
+      ctx.fillRect(i + 9, 0, 5, 128);
     }
     const tex = new BABYLON.Texture(cv.toDataURL(), this.scene);
     tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
@@ -141,19 +152,22 @@ export class World {
     this.beltTextures.push(tex);
     const belt = new BABYLON.PBRMaterial('travelatorBelt', this.scene);
     belt.albedoTexture = tex;
-    belt.metallic = 0.2; belt.roughness = 0.7;
+    belt.metallic = 0.05; belt.roughness = 0.92; // matte rubber
     deck.material = belt;
+    deck.receiveShadows = true;
 
     // End rollers + hazard side rails
     const metal = this.mats.pbr('travelatorMetal', [0.16, 0.2, 0.24], 0.7, 0.4);
     [-1, 1].forEach((side) => {
-      const roller = BABYLON.MeshBuilder.CreateCylinder('travelatorRoller', { diameter: top * 1.5, height: d, tessellation: 20 }, this.scene);
-      roller.position.set(x + side * w / 2, top / 2, z);
+      // Rollers sit OUTSIDE the deck ends (no coplanar overlap → no z-fighting).
+      const roller = BABYLON.MeshBuilder.CreateCylinder('travelatorRoller', { diameter: top * 1.5, height: d + 0.12, tessellation: 20 }, this.scene);
+      roller.position.set(x + side * (w / 2 + 0.06), top / 2 + 0.005, z);
       roller.rotation.x = Math.PI / 2;
       roller.material = metal;
       roller.receiveShadows = true;
-      const rail = BABYLON.MeshBuilder.CreateBox('travelatorRail', { width: w, height: 0.14, depth: 0.14 }, this.scene);
-      rail.position.set(x, top + 0.24, z + side * (d / 2 - 0.07));
+      // Rails float above the belt edge with clear separation.
+      const rail = BABYLON.MeshBuilder.CreateBox('travelatorRail', { width: w + 0.12, height: 0.14, depth: 0.14 }, this.scene);
+      rail.position.set(x, top + 0.28, z + side * (d / 2 + 0.04));
       rail.material = this.mats.matte('travelatorRailMat', [0.95, 0.72, 0.12]);
       rail.receiveShadows = true;
     });
@@ -161,15 +175,54 @@ export class World {
   }
 
   private beltTextures: BABYLON.Texture[] = [];
+  private toonMats!: { cardboard: BABYLON.Material; tape: BABYLON.Material; ink: BABYLON.Material };
+
+  /** Painted cardboard texture generated on a canvas — clean, no stray
+   *  geometry. Tape, flap seams and a cute face are all painted into the
+   *  texture, so the box is ONE mesh with no overlapping black shapes. */
+  private initToonShader() {
+    if (this.toonMats) return;
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 256;
+    const c = cv.getContext('2d')!;
+    // Warm cardboard base with subtle fibre speckle
+    c.fillStyle = '#c89455';
+    c.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 900; i++) {
+      c.fillStyle = i % 3 ? 'rgba(120,80,40,0.05)' : 'rgba(255,230,180,0.05)';
+      c.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+    }
+    // Painted top flaps + tape (top face = UV region around y<.33 on a box)
+    c.fillStyle = '#b5834a';
+    c.fillRect(0, 0, 256, 60);
+    c.fillStyle = '#dcb079';
+    c.fillRect(112, 0, 32, 60); // tape strip on top
+    // Soft painted face — warm brown, no hard black lines
+    c.fillStyle = '#6b4426';
+    c.beginPath(); c.arc(34, 150, 7, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(62, 150, 7, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#8a5a34';
+    c.beginPath(); c.ellipse(48, 166, 12, 7, 0, 0, Math.PI * 2); c.fill();
+    // Rosy cheeks
+    c.fillStyle = 'rgba(220,130,100,0.25)';
+    c.beginPath(); c.arc(20, 160, 6, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(76, 160, 6, 0, Math.PI * 2); c.fill();
+
+    const tex = new BABYLON.Texture(cv.toDataURL(), this.scene);
+    const m = new BABYLON.StandardMaterial('pickupCardboard', this.scene);
+    m.diffuseTexture = tex;
+    m.specularColor = new BABYLON.Color3(0.04, 0.04, 0.04);
+    m.emissiveColor = new BABYLON.Color3(0.14, 0.1, 0.05); // soft lift, keeps toon look
+    m.disableLighting = false;
+    this.toonMats = { cardboard: m, tape: m, ink: m };
+  }
 
   private build() {
     // ---- Welcome zone (0..70): material test area, hero starts on ground ----
-    // Starting travelator (x=2..10) — carries the player from the very start.
-    this.addTravelator(6, 0, 8, 5, 5.5);
-    // Welcome zone stepping platforms
-    this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.0
-    this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.6
-    this.addPlatform(26, 1.8, 0, 5, 1, 4, [0.2, 0.9, 1]);      // top 2.3
+    // Long starting travelator (x=2..26) — a proper opening conveyor run.
+    // The first two small stepping platforms were removed so nothing
+    // intersects it; the next surface is the 30° ramp after x=26.
+    this.addTravelator(14, 0, 24, 5, 6.5);
     // Single 30° ramp: rises from the ground to meet the platform at x=44
     // exactly at its top (2.7 m), so slope detection and alignment line up.
     this.addRamp(39.3231, 0, 44, 2.7, 0, 6);
@@ -200,57 +253,48 @@ export class World {
     this.addPlatform(286, 2.2, 0, 7, 1, 5, [0.6, 0.5, 0.95]);
     this.addPlatform(302, 1.6, 0, 8, 1, 5, [0.95, 0.7, 0.3]);
 
-    // Prototype cubes scattered along the route
-    for (let i = 0; i < 12; i++) {
-      const x = 8 + i * 15;
-      if (x >= 52 && x <= 92) continue; // keep the road section completely clear
-      const s = 0.8 + (i % 3) * 0.35;
-      const cube = BABYLON.MeshBuilder.CreateBox('protoCube', { size: s }, this.scene);
-      cube.position.set(x, s / 2 + (i % 2 ? 0.6 : 0), -5 - (i % 3));
-      cube.material = this.mats.emissive('protoCubeMat', [0.35 + (i % 4) * 0.12, 0.6, 0.95]);
-      cube.rotation.y = i * 0.4;
-      cube.isPickable = false;
-      this.colliders.push({ x: cube.position.x, y: cube.position.y, z: cube.position.z, w: s, h: s, d: s });
-    }
-
-    // INDIE-STYLE collectibles — chunky pixel-art "stars" built from tiny
-    // cubes, with a soft glow billboard. Placed high above the highest nearby
-    // surface so they NEVER intersect platforms, ramps, road or the player.
-    const starMat = new BABYLON.StandardMaterial('pickupStarMat', this.scene);
-    starMat.diffuseColor = BABYLON.Color3.Black();
-    starMat.specularColor = BABYLON.Color3.Black();
-    starMat.emissiveColor = BABYLON.Color3.FromHexString('#ffd24a');
-    starMat.disableLighting = true;
+    // AAA STYLIZED collectibles — cute little cardboard boxes with toon
+    // shading, tape strips, flaps and a happy face. Placed high above the
+    // highest nearby surface so they NEVER intersect anything.
+    this.initToonShader();
 
     for (let i = 0; i < 16; i++) {
       const x = 12 + i * 10.5;
       const z = 0;
-      // Find the HIGHEST surface within a generous radius so the collectible
-      // clears everything nearby (platform tops, ramps, road, travelators).
       let base = 0;
       for (let dx = -3; dx <= 3; dx += 1.5) {
         for (let dz = -3; dz <= 3; dz += 1.5) base = Math.max(base, this.surfaceHeightAt(x + dx, z + dz));
       }
-      const y = base + 2.2; // ≥2.2 m of clear air below the lowest cube
+      const y = base + 2.0;
       const root = new BABYLON.TransformNode(`pickup${i}`, this.scene);
       root.position.set(x, y, z);
 
-      // Pixel-art star: a plus of blocks in the XY plane = retro 8-bit star
-      const px = 0.12;
-      const cells = [[0,0],[px,0],[-px,0],[0,px],[0,-px],[px*0.7,px*0.7],[-px*0.7,px*0.7],[px*0.7,-px*0.7],[-px*0.7,-px*0.7]];
-      for (const [cx, cy] of cells) {
-        const cube = BABYLON.MeshBuilder.CreateBox('pickupPixel', { size: 0.14 }, this.scene);
-        cube.position.set(cx, cy, 0);
-        cube.material = starMat;
-        cube.parent = root;
-      }
-      // Tiny sparkle accents (reuse the same material)
-      for (const a of [0, Math.PI / 2]) {
-        const sp = BABYLON.MeshBuilder.CreateBox('pickupSpark', { size: 0.06 }, this.scene);
-        sp.position.set(Math.cos(a) * 0.24, Math.sin(a) * 0.24, 0);
-        sp.material = starMat;
-        sp.parent = root;
-      }
+      // Cardboard box body (toon shaded)
+      const body = BABYLON.MeshBuilder.CreateBox('pickupBox', { size: 0.42 }, this.scene);
+      body.material = this.toonMats.cardboard;
+      body.parent = root;
+      // Top tape strip
+      const tape = BABYLON.MeshBuilder.CreateBox('pickupTape', { width: 0.1, height: 0.012, depth: 0.43 }, this.scene);
+      tape.position.y = 0.216;
+      tape.material = this.toonMats.tape;
+      tape.parent = root;
+      // Flap seam line across the top
+      const seam = BABYLON.MeshBuilder.CreateBox('pickupSeam', { width: 0.43, height: 0.008, depth: 0.012 }, this.scene);
+      seam.position.y = 0.213;
+      seam.material = this.toonMats.ink;
+      seam.parent = root;
+      // Cute face — two eyes + smile on the front (+Z) face
+      [-0.09, 0.09].forEach((ex) => {
+        const eye = BABYLON.MeshBuilder.CreateBox('pickupEye', { width: 0.055, height: 0.075, depth: 0.015 }, this.scene);
+        eye.position.set(ex, 0.05, 0.216);
+        eye.material = this.toonMats.ink;
+        eye.parent = root;
+      });
+      const smile = BABYLON.MeshBuilder.CreateBox('pickupSmile', { width: 0.11, height: 0.02, depth: 0.015 }, this.scene);
+      smile.position.set(0, -0.02, 0.216);
+      smile.material = this.toonMats.ink;
+      smile.parent = root;
+
       this.pickups.push({ mesh: root as any, pos: root.position.clone(), collected: false, phase: i * 0.7 });
     }
 
@@ -296,13 +340,21 @@ export class World {
 
   public update(dt: number, playerX: number) {
     this.t += dt;
-    for (const tex of this.beltTextures) tex.uOffset -= dt * this.travelators[0].speed / 1.5;
+    // Original belt scroll: uOffset -= dt * speed / 1.5
+    for (let i = 0; i < this.beltTextures.length; i++) {
+      this.beltTextures[i].uOffset -= dt * this.travelators[i].speed / 1.5;
+    }
     for (const p of this.pickups) {
       if (p.collected) continue;
+      const bob = Math.sin(this.t * 2 + p.phase);
       p.mesh.rotation.y += dt * 0.9;
-      p.mesh.position.y = p.pos.y + Math.sin(this.t * 2 + p.phase) * 0.16;
-      (p.mesh as any).scaling.setAll(0.94 + Math.sin(this.t * 5 + p.phase) * 0.06);
-      // Crystal spins, inner core pulses, rings counter-rotate
+      p.mesh.position.y = p.pos.y + bob * 0.16;
+      // Squash & stretch: stretch when rising, squash at the top of the bob.
+      // Volume-preserving: when Y grows, X/Z shrink and vice versa.
+      const phase = this.t * 3 + p.phase;
+      const sy = 1 + Math.sin(phase) * 0.13;
+      const sxz = 1 / Math.sqrt(sy);
+      (p.mesh as any).scaling.set(sxz, sy, sxz);
       const kids = p.mesh.getChildren() as BABYLON.AbstractMesh[];
       if (kids[0]) kids[0].rotation.y += dt * 1.4;
       if (kids[1]) kids[1].scaling.setAll(0.9 + Math.sin(this.t * 4 + p.phase) * 0.15);

@@ -76,6 +76,7 @@ class App {
     this.ui = new UI(DEFAULT_COLORS, {
       play: () => this.startExploring(),
       menu: () => this.returnToMenu(),
+      sfx: (kind: any) => this.audio.button(kind),
     });
     this.ui.setLoading(12);
 
@@ -141,7 +142,6 @@ class App {
     });
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.enableShadowReceivers();
-    this.loadCows();
     this.loadRoad();
 
     this.input = new Input();
@@ -174,6 +174,10 @@ class App {
     this.ui.setLoading(100);
     this.ui.hideLoading();
     (window as any).__nbhd = this;
+    // Dev-only tools — stripped entirely from production builds by Vite.
+    if (import.meta.env.DEV) {
+      import('./ui/DevPanel').then((m) => { (window as any).__devPanel = new m.DevPanel(this); });
+    }
     this.lastTime = performance.now();
     this.engine.runRenderLoop(() => this.frame());
     window.addEventListener('resize', () => this.engine.resize());
@@ -281,47 +285,6 @@ class App {
     }
   }
 
-  /** Background Holstein cows — a small herd placed deep in the level so they
-   *  frame the side-scrolling route without ever blocking the player. */
-  private async loadCows() {
-    try {
-      const res = await BABYLON.SceneLoader.ImportMeshAsync('', '/models/cow/', 'cow.glb', this.scene);
-      const source = res.meshes.find((m) => m instanceof BABYLON.Mesh && m.getTotalVertices() > 0) as BABYLON.Mesh | undefined;
-      if (!source) return;
-
-      // The source is 1 m long (Y-up, head toward +X). Scale to a real cow:
-      // ~2.4 m long / ~1.5 m tall / ~0.7 m wide.
-      const scale = 2.4;
-      const feetOffset = -source.getBoundingInfo().boundingBox.minimum.y * scale;
-      const spots = [
-        { x: 15, z: 11, face: Math.PI }, { x: 41, z: 14, face: 0 },
-        { x: 82, z: 12, face: Math.PI }, { x: 124, z: 15, face: 0 },
-        { x: 168, z: 11, face: Math.PI },
-      ];
-      source.receiveShadows = true; // instances inherit this
-      source.setEnabled(false); // hide the import origin; instances are the herd
-      spots.forEach((s, i) => {
-        const cow = source.createInstance(`cow${i}`);
-        cow.position.set(s.x, feetOffset, s.z);
-        cow.scaling.setAll(scale);
-        cow.rotation.y = s.face;
-        cow.isPickable = false;
-        this.env.registerShadowCaster(cow);
-        // Solid body collider so the player cannot walk through the herd.
-        this.world.colliders.push({
-          x: s.x,
-          y: feetOffset,
-          z: s.z,
-          w: 2.3,
-          h: 1.45,
-          d: 0.85,
-        });
-      });
-    } catch (e) {
-      console.warn('[Cow] background herd failed to load:', e);
-    }
-  }
-
   private flashPickup(p: Pickup) {
     const ring = BABYLON.MeshBuilder.CreateTorus('pickupRing', { diameter: 1, thickness: 0.06, tessellation: 20 }, this.scene);
     ring.position.copyFrom(p.mesh.position);
@@ -337,6 +300,35 @@ class App {
       if (life <= 0) { this.scene.onBeforeRenderObservable.remove(obs); ring.dispose(); mat.dispose(); }
     });
   }
+
+  /** Cinematic world collapse: implode every mesh toward the player, flash,
+   *  then restore — a dramatic one-shot showcase transition. */
+  private collapseWorld() {
+    if (this.collapsing) return;
+    this.collapsing = true;
+    const focus = new BABYLON.Vector3(this.ppos.x, this.ppos.y + 1, this.ppos.z);
+    const meshes = this.scene.meshes.filter((m) => m.isEnabled() && m.name !== 'skyBox');
+    const saved = meshes.map((m) => ({ m: m, pos: m.position.clone(), scl: m.scaling.clone() }));
+    let t = 0;
+    const obs = this.scene.onBeforeRenderObservable.add(() => {
+      t += this.engine.getDeltaTime() / 1000 / 1.8;
+      const k = Math.min(1, t);
+      // implode 0→0.5, hold, restore 0.7→1
+      let c = k < 0.5 ? k / 0.5 : k > 0.7 ? (1 - k) / 0.3 : 1;
+      c = c * c * (3 - 2 * c);
+      for (const s of saved) {
+        s.m.position.copyFrom(BABYLON.Vector3.Lerp(focus, s.pos, Math.max(0.001, 1 - c * 0.92)));
+        s.m.scaling.copyFrom(s.scl.scale(Math.max(0.001, 1 - c * 0.85)));
+      }
+      this.camera.punch(2 * c);
+      if (k >= 1) {
+        for (const s of saved) { s.m.position.copyFrom(s.pos); s.m.scaling.copyFrom(s.scl); }
+        this.scene.onBeforeRenderObservable.remove(obs);
+        this.collapsing = false;
+      }
+    });
+  }
+  private collapsing = false;
 
   private createDrone() {
     this.drone?.dispose();
