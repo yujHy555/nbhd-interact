@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NBHD interact — Interactive</title>
+  <style>
+    :root {
+      --ink: #2d3b47;
+      --ink-dark: #1b2730;
+      --cyan: #5ce1e6;
+      --gold: #ffc857;
+      --pink: #ff7fb8;
+      --paper: #eef3f6;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--ink); font-family: 'Segoe UI', system-ui, sans-serif; color: var(--paper); }
+    #renderCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+
+    /* ---------- Loading ---------- */
+    #loading { position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--ink); gap: 18px; }
+    #loading img { width: 260px; opacity: 0.9; }
+    .loader-bar { width: 260px; height: 4px; background: rgba(255,255,255,0.12); border-radius: 4px; overflow: hidden; }
+    .loader-fill { width: 0%; height: 100%; background: var(--cyan); transition: width 0.3s; }
+    .loader-text { font-size: 0.8rem; letter-spacing: 0.25em; text-transform: uppercase; opacity: 0.7; }
+
+    /* ---------- HUD ---------- */
+    #hud { position: absolute; inset: 0; z-index: 10; pointer-events: none; }
+    #hud-top { position: absolute; top: 20px; left: 24px; right: 24px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .brand-mark { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.08em; }
+    .brand-mark .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 14px var(--cyan); }
+    .zone-chip { padding: 8px 16px; border: 1px solid rgba(92,225,230,0.5); border-radius: 999px; background: rgba(12,24,32,0.55); backdrop-filter: blur(8px); font-size: 0.78rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--cyan); }
+    .hud-stat { font-size: 0.78rem; letter-spacing: 0.12em; opacity: 0.85; }
+    #controls-hint { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 0.78rem; letter-spacing: 0.1em; opacity: 0.7; background: rgba(12,24,32,0.55); padding: 8px 18px; border-radius: 999px; backdrop-filter: blur(8px); }
+    kbd { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 5px; padding: 2px 6px; font-family: inherit; font-size: 0.75rem; }
+
+    /* ---------- Overlays ---------- */
+    .overlay { position: absolute; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; pointer-events: auto; background: rgba(20,32,42,0.55); backdrop-filter: blur(10px); }
+    .overlay.visible { display: flex; }
+    .panel { width: min(760px, 90vw); max-height: 86vh; overflow-y: auto; padding: 38px 44px; border-radius: 22px; background: rgba(22,34,44,0.94); border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 30px 80px rgba(0,0,0,0.5); }
+    .panel h1 { margin: 0 0 6px; font-size: 2.6rem; letter-spacing: -0.02em; }
+    .panel h2 { margin: 0 0 14px; font-size: 2rem; }
+    .panel p { line-height: 1.65; opacity: 0.85; margin: 10px 0; }
+    .eyebrow { font-size: 0.72rem; letter-spacing: 0.28em; text-transform: uppercase; color: var(--cyan); margin-bottom: 10px; }
+    .logo-strip { width: 220px; margin-bottom: 22px; filter: brightness(1.1); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px 26px; border-radius: 999px; border: none; cursor: pointer; font: 700 0.92rem/1 'Segoe UI', sans-serif; letter-spacing: 0.06em; transition: transform 0.14s, filter 0.14s; }
+    .btn:hover { transform: translateY(-2px); filter: brightness(1.1); }
+    .btn.primary { background: var(--cyan); color: #10232a; }
+    .btn.ghost { background: transparent; color: var(--paper); border: 1px solid rgba(255,255,255,0.3); }
+    .btn.gold { background: var(--gold); color: #2b2105; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; }
+    .toggle { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.2); cursor: pointer; font-size: 0.85rem; }
+    .toggle .led { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,0.2); }
+    .toggle.on .led { background: var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+
+    /* Customization */
+    #customize h2 { margin-top: 0; }
+    .cust-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 18px 0; }
+    .swatch-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .swatch { width: 34px; height: 34px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+    .swatch.active { border-color: #fff; transform: scale(1.12); }
+    .cust-label { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.6; margin-bottom: 8px; }
+
+    /* Zone content cards */
+    .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 20px 0; }
+    .card { padding: 20px; border-radius: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); }
+    .card h3 { margin: 0 0 8px; font-size: 1.05rem; color: var(--gold); }
+    .card p { font-size: 0.88rem; margin: 0; opacity: 0.75; }
+    .contact-mail { font-size: 1.4rem; color: var(--cyan); text-decoration: none; }
+
+    /* FPS */
+    #fps { position: absolute; top: 18px; right: 24px; z-index: 12; font: 700 0.75rem/1 ui-monospace, monospace; color: var(--cyan); opacity: 0.7; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <div id="hud">
+    <div id="hud-top">
+      <div class="brand-mark"><span class="dot"></span> NBHD INTERACT</div>
+      <div class="zone-chip" id="zone-chip">WELCOME ZONE</div>
+      <div class="hud-stat" id="pickup-count">COLLECTIBLES 0 / 16</div>
+    </div>
+    <div id="controls-hint"><kbd>A</kbd><kbd>D</kbd> move · <kbd>W</kbd><kbd>S</kbd> depth · <kbd>SPACE</kbd> jump · <kbd>WASD</kbd> / gamepad</div>
+  </div>
+  <div id="fps">60 FPS</div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <img src="/logos/NBHD_interact_logo_01.png" alt="NBHD interact" />
+    <div class="loader-bar"><div class="loader-fill" id="loader-fill"></div></div>
+    <div class="loader-text">Preparing the neighborhood…</div>
+  </div>
+
+  <!-- Welcome / landing overlay -->
+  <div id="welcome" class="overlay visible">
+    <div class="panel">
+      <img class="logo-strip" src="/logos/NBHD_interact_logo_01.png" alt="NBHD interact" />
+      <div class="eyebrow">Interactive Experience</div>
+      <h1>Welcome to the neighborhood.</h1>
+      <p>We build worlds you can walk into. Customize your character, spin him on the turntable, then step out and explore — the whole site is a living 3D environment.</p>
+      <div class="row">
+        <button class="btn ghost" id="btn-customize">Customize Character</button>
+        <button class="btn ghost" id="btn-rotate">⟳ Turntable: OFF</button>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="btn-explore">Confirm Look &amp; Explore →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customization -->
+  <div id="customize" class="overlay">
+    <div class="panel">
+      <div class="eyebrow">Character Designer</div>
+      <h2>Make him yours</h2>
+      <div id="cust-controls"></div>
+      <div class="row"><button class="btn primary" id="btn-cust-done">Done</button></div>
+    </div>
+  </div>
+
+  <!-- What We Do -->
+  <div id="whatwedo" class="overlay">
+    <div class="panel">
+      <div class="eyebrow">Zone 02</div>
+      <h2>What we do</h2>
+      <p>We make interactive experiences that blur the line between a website and a world — built in real time, engineered for the browser.</p>
+      <div class="feature-grid">
+        <div class="card"><h3>Real-time 3D</h3><p>Babylon.js worlds with physically based materials, HDRI lighting and cinematic cameras.</p></div>
+        <div class="card"><h3>Playable Interfaces</h3><p>Landing pages that are games — exploration, customization and story in one continuous space.</p></div>
+        <div class="card"><h3>WebGL Engineering</h3><p>Performance-first rendering, procedural systems and asset pipelines built for scale.</p></div>
+      </div>
+      <div class="row"><button class="btn ghost" id="btn-wwd-close">Keep Exploring →</button></div>
+    </div>
+  </div>
+
+  <!-- Contact -->
+  <div id="contact" class="overlay">
+    <div class="panel">
+      <div class="eyebrow">Zone 03</div>
+      <h2>Let's build something.</h2>
+      <p>Got an idea that deserves a world of its own? We'd love to hear it.</p>
+      <p><a class="contact-mail" href="mailto:hello@nbhdinteract.com">hello@nbhdinteract.com</a></p>
+      <div class="row"><button class="btn ghost" id="btn-contact-close">← Back to the neighborhood</button></div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
