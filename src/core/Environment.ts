@@ -12,6 +12,7 @@ export class Environment {
   public sun: BABYLON.DirectionalLight;
   public hemi: BABYLON.HemisphericLight;
   public ground: BABYLON.Mesh;
+  public sky: BABYLON.Mesh;
   public envTexture: BABYLON.BaseTexture | null = null;
   private scene: BABYLON.Scene;
   private shadowGen: BABYLON.ShadowGenerator;
@@ -34,7 +35,7 @@ export class Environment {
     // Visible background: the full 4096×2048 blue-desert panorama mapped
     // directly onto a sphere, independent of the HDR lighting IBL.
     const skyTex = new BABYLON.Texture('/hdri/blue_desert/textures/Scene_-_Root_diffuse.jpeg', scene);
-    skyTex.level = 1.35;
+    skyTex.level = 0.85; // reduce sky brightness so bloom doesn't blow it out
     skyTex.anisotropicFilteringLevel = 8;
     const sky = BABYLON.MeshBuilder.CreateSphere('skyBox', { diameter: 4000, segments: 48 }, scene);
     sky.rotation.x = Math.PI;
@@ -53,6 +54,7 @@ export class Environment {
     sky.infiniteDistance = true;
     sky.alwaysSelectAsActiveMesh = true;
     sky.renderingGroupId = 0;
+    this.sky = sky;
 
     // ---- Sun (directional) with shadows ----
     // 11am sun — higher than 9am, so a moderately long shadow still falls
@@ -116,6 +118,14 @@ export class Environment {
   }
 
   public registerShadowCaster(mesh: BABYLON.AbstractMesh) { this.shadowGen.addShadowCaster(mesh, true); }
+  public unregisterShadowCaster(mesh: BABYLON.AbstractMesh) {
+    try { this.shadowGen.removeShadowCaster(mesh, true); } catch (e) { void e; }
+    // Also prune directly — clones may be registered under a descendant name.
+    const rl = this.shadowGen.getShadowMap()!.renderList as BABYLON.AbstractMesh[];
+    const keep = rl.filter((m) => m !== mesh && !(m.name && mesh.name && m.name.indexOf(mesh.name) === 0));
+    rl.length = 0;
+    for (const m of keep) rl.push(m);
+  }
 
   /** Keep the sun's shadow volume centred on the action. Position is QUANTIZED
    *  to 40 m steps so the light only jumps occasionally instead of sliding

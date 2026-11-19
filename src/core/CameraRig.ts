@@ -31,9 +31,12 @@ export class CameraRig {
     this.camera.upperBetaLimit = 1.42;
     this.camera.wheelPrecision = 40;
     this.camera.attachControl(canvas, true);
-    // Our input layer owns orbit — remove Babylon's competing handlers.
+    // Our input layer owns orbit — remove ALL competing Babylon inputs so
+    // pointer drag doesn't fight manual alpha/beta writes (camera stickiness).
     this.camera.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
     this.camera.inputs.removeByType('ArcRotateCameraGamepadInput');
+    this.camera.inputs.removeByType('ArcRotateCameraPointersInput');
+    this.camera.inputs.removeByType('ArcRotateCameraMouseWheelInput');
   }
 
   public getCamera() { return this.camera; }

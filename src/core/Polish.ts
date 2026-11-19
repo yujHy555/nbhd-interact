@@ -27,15 +27,15 @@ export class Polish {
     this.pipeline.fxaaEnabled = true;
     this.pipeline.samples = 4;
     this.pipeline.bloomEnabled = true;
-    this.pipeline.bloomThreshold = 0.72;
-    this.pipeline.bloomWeight = 0.35;
-    this.pipeline.bloomKernel = 48;
-    this.pipeline.bloomScale = 0.5;
+    this.pipeline.bloomThreshold = 0.9;
+    this.pipeline.bloomWeight = 0.18;
+    this.pipeline.bloomKernel = 32;
+    this.pipeline.bloomScale = 0.4;
     this.pipeline.imageProcessingEnabled = true;
-    // Subtle vignette for cinematic framing
+    // Gentle vignette — a heavy one darkened the whole sky into "disappearing".
     this.pipeline.imageProcessing.vignetteEnabled = true;
-    this.pipeline.imageProcessing.vignetteWeight = 2.2;
-    this.pipeline.imageProcessing.vignetteStretch = 0.35;
+    this.pipeline.imageProcessing.vignetteWeight = 0.55;
+    this.pipeline.imageProcessing.vignetteStretch = 0.15;
     this.pipeline.imageProcessing.vignetteColor = new BABYLON.Color4(0.04, 0.07, 0.1, 1);
     this.pipeline.imageProcessing.vignetteCameraFov = 0.9;
     // Gentle chromatic aberration at edges
@@ -47,7 +47,7 @@ export class Polish {
     // Film grain for texture
     (this.pipeline as any).grainEnabled = true;
     if (this.pipeline.grain) {
-      this.pipeline.grain.intensity = 4;
+      this.pipeline.grain.intensity = 2;
       this.pipeline.grain.animated = true;
     }
     // Depth of field DISABLED — it blurred the distant sky sphere into

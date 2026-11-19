@@ -169,6 +169,7 @@ export class Drone {
   private haloMat!: BABYLON.StandardMaterial;
   private bodyGrid!: BABYLON.Mesh;      // emission grid wrapped on the player
   private bodyGridMat!: BABYLON.ShaderMaterial;
+  private removeShadowCaster?: (m: BABYLON.AbstractMesh) => void;
   private scanLight!: BABYLON.SpotLight; // real light shining onto the player
   private glow: BABYLON.GlowLayer;
   private phase: Phase = 'dormant';
@@ -181,9 +182,10 @@ export class Drone {
   private disposed = false;
   private onCue?: () => void;
 
-  constructor(scene: BABYLON.Scene, onCue?: () => void) {
+  constructor(scene: BABYLON.Scene, onCue?: () => void, removeShadowCaster?: (m: BABYLON.AbstractMesh) => void) {
     this.scene = scene;
     this.onCue = onCue;
+    this.removeShadowCaster = removeShadowCaster;
     this.root = new BABYLON.TransformNode('scanDrone', scene);
     this.root.setEnabled(false);
     this.glow = new BABYLON.GlowLayer('droneGlow', scene, { blurKernelSize: 48, mainTextureFixedSize: 512 });
@@ -370,6 +372,17 @@ export class Drone {
     this.bodyGrid.material = this.bodyGridMat;
     this.bodyGrid.isPickable = false;
     this.bodyGrid.renderingGroupId = 1;
+    // A mesh clone inherits shadow-caster registration and the stale 83 m
+    // bounding box from the hero GLB — that created a giant glitchy shadow.
+    this.bodyGrid.setBoundingInfo(new BABYLON.BoundingInfo(
+      new BABYLON.Vector3(-1.1, 0, -1.1), new BABYLON.Vector3(1.1, 2.0, 1.1)));
+    this.bodyGrid.getChildMeshes(false).forEach((m) => {
+      (m as BABYLON.Mesh).setBoundingInfo(new BABYLON.BoundingInfo(
+        new BABYLON.Vector3(-1.1, 0, -1.1), new BABYLON.Vector3(1.1, 2.0, 1.1)));
+    });
+    // Remove from shadow casting (the main hero still casts the real shadow).
+    this.removeShadowCaster?.(this.bodyGrid);
+    this.bodyGrid.getChildMeshes(false).forEach((m) => this.removeShadowCaster?.(m));
     this.bodyGrid.setEnabled(false);
   }
 

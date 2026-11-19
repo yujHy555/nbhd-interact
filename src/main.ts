@@ -355,7 +355,7 @@ class App {
 
   private createDrone() {
     this.drone?.dispose();
-    this.drone = new Drone(this.scene, () => this.audio.zone());
+    this.drone = new Drone(this.scene, () => this.audio.zone(), (m) => this.env.unregisterShadowCaster(m));
     const hero = this.mixamo.root.getChildMeshes(false).find((m) => m instanceof BABYLON.Mesh) as BABYLON.Mesh | undefined;
     if (hero) this.drone.bindTarget(hero);
   }
@@ -634,6 +634,9 @@ class App {
       }
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
+    // Keep the sky sphere centred on the camera every frame — infiniteDistance
+    // alone left it behind at far ends of the expanded map (sky disappeared).
+    this.env.sky.position.copyFrom(this.camera.getCamera().position);
     this.pixelPortal.update(dt, pp);
     this.env.focusSun(pp);
     this.drone.update(dt, pp);
