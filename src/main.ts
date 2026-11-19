@@ -152,8 +152,9 @@ class App {
     }).then(() => {
       for (const m of this.scene.meshes) {
         if (m.name.indexOf('sciFiBuilding') === 0) {
+          // Background scenery: receive shadows but DON'T cast long shadows
+          // across the whole level (that created the strange giant shadow).
           m.receiveShadows = true;
-          this.env.registerShadowCaster(m);
         }
       }
     });

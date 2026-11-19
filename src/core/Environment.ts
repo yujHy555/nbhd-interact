@@ -36,7 +36,7 @@ export class Environment {
     const skyTex = new BABYLON.Texture('/hdri/blue_desert/textures/Scene_-_Root_diffuse.jpeg', scene);
     skyTex.level = 1.35;
     skyTex.anisotropicFilteringLevel = 8;
-    const sky = BABYLON.MeshBuilder.CreateSphere('skyBox', { diameter: 1800, segments: 64 }, scene);
+    const sky = BABYLON.MeshBuilder.CreateSphere('skyBox', { diameter: 4000, segments: 48 }, scene);
     sky.rotation.x = Math.PI;
     const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
     skyMat.backFaceCulling = false;
@@ -49,6 +49,10 @@ export class Environment {
     sky.isPickable = false;
     sky.infiniteDistance = true;
     sky.applyFog = false;
+    // Never frustum-cull the sky — it must always fill the background even
+    // at extreme camera orbit angles / far ends of the expanded map.
+    sky.alwaysSelectAsActiveMesh = true;
+    sky.renderingGroupId = 0;
 
     // ---- Sun (directional) with shadows ----
     // 11am sun — higher than 9am, so a moderately long shadow still falls
