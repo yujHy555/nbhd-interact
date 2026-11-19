@@ -39,37 +39,76 @@ export class World {
     box.material = color ? this.mats.matte('platAccent', color) : this.mats.concrete('platConcrete');
     box.receiveShadows = true;
     this.colliders.push({ x, y, z, w, h, d });
-    // Glowing top edge
-    const edge = BABYLON.MeshBuilder.CreateBox('platEdge', { width: w, height: 0.05, depth: d }, this.scene);
-    edge.position.set(x, y + h / 2 + 0.03, z);
-    edge.material = this.mats.emissive('platEdge', color ?? [0.2, 0.9, 1]);
-    edge.isPickable = false;
+    // No decorative top slab — a raised slab made shoes visibly sink into it.
     return box;
   }
 
-  /** Build a ramp whose visible top surface and collision surface are the
-   *  SAME plane — no approximation. The box is sheared (not rotated) so the
-   *  run stays horizontal and the slope angle matches atan2(rise, run). */
+  /** Solid industrial wedge ramp. The top plane is built from exact vertices
+   *  from (x0,y0) to (x1,y1), so the visible tread and the collision surface
+   *  are the SAME plane — no shearing approximation, unmistakably angled. */
   private addRamp(x0: number, y0: number, x1: number, y1: number, z: number, d: number) {
     const w = x1 - x0;
     const cx = (x0 + x1) / 2;
-    const cy = (y0 + y1) / 2;
-    const T = 0.22; // slab thickness
-    const ramp = BABYLON.MeshBuilder.CreateBox('ramp', { width: w, height: T, depth: d }, this.scene);
-    ramp.position.set(cx, cy - T / 2, z);
-    // Shear: shift each vertex's Y by its X position × gradient.
-    const positions = ramp.getVerticesData(BABYLON.VertexBuffer.PositionKind)!;
-    const rise = y1 - y0;
-    for (let i = 0; i < positions.length; i += 3) positions[i + 1] += (positions[i] / w) * rise;
-    ramp.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
-    const indices = ramp.getIndices()!;
-    const normals: number[] = [];
-    BABYLON.VertexData.ComputeNormals(positions, indices, normals);
-    ramp.updateVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
-    ramp.material = this.mats.concrete('rampMat');
-    ramp.receiveShadows = true;
+    const z0 = z - d / 2, z1 = z + d / 2;
+    const base = y0 - 0.12;
+
+    // Ribbed tread texture
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 128;
+    const ctx = cv.getContext('2d')!;
+    ctx.fillStyle = '#969da3'; ctx.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 128; i += 8) {
+      ctx.fillStyle = i % 16 === 0 ? '#666e76' : '#b0b7bd';
+      ctx.fillRect(i, 0, 3, 128);
+    }
+    const treadTex = new BABYLON.Texture(cv.toDataURL(), this.scene);
+    const tread = new BABYLON.PBRMaterial('rampTread', this.scene);
+    tread.albedoTexture = treadTex;
+    tread.metallic = 0.35; tread.roughness = 0.62;
+
+    // Solid wedge: sloped top, flat base, vertical high end, triangular sides.
+    const P = [
+      x0, y0, z0,  x1, y1, z0,  x1, base, z0,   // 0,1,2 front
+      x0, y0, z1,  x1, y1, z1,  x1, base, z1,   // 3,4,5 back
+    ];
+    const I = [
+      0, 2, 1, 3, 4, 5,             // triangular sides
+      0, 1, 4, 0, 4, 3,             // sloped top tread
+      0, 3, 5, 0, 5, 2,             // flat base
+      1, 2, 5, 1, 5, 4,             // vertical high end
+    ];
+    const uv: number[] = [];
+    for (let i = 0; i < P.length; i += 3) uv.push((P[i] - x0) / w * 3, (P[i + 2] - z0) / d);
+    const vd = new BABYLON.VertexData();
+    vd.positions = P; vd.indices = I; vd.uvs = uv; vd.normals = [];
+    BABYLON.VertexData.ComputeNormals(P, I, vd.normals);
+    const deck = new BABYLON.Mesh('ramp', this.scene);
+    vd.applyToMesh(deck);
+    deck.material = tread;
+    deck.receiveShadows = true;
+    deck.convertToFlatShadedMesh();
+
+    // Side rails along the sloping top edges
+    const railMat = this.mats.pbr('rampRail', [0.16, 0.18, 0.2], 0.6, 0.45);
+    [-1, 1].forEach((side) => {
+      const zz = z + side * (d / 2 - 0.1);
+      const rail = BABYLON.MeshBuilder.CreateBox('rampRail', { width: w, height: 0.16, depth: 0.16 }, this.scene);
+      rail.position.set(cx, (y0 + y1) / 2 + 0.08, zz);
+      rail.rotation.z = Math.atan2(y1 - y0, w); // matches the tread gradient
+      rail.material = railMat;
+      rail.receiveShadows = true;
+    });
+
+    // Bolted low edge
+    for (let i = 0; i < 6; i++) {
+      const bolt = BABYLON.MeshBuilder.CreateCylinder('rampBolt', { diameter: 0.09, height: 0.04, tessellation: 10 }, this.scene);
+      bolt.position.set(x0 + (w * (i + 0.5)) / 6, y0 + 0.05, z0 - 0.04);
+      bolt.rotation.x = Math.PI / 2;
+      bolt.material = railMat;
+    }
+
     this.slopes.push({ x: cx, z, w, d, y0, y1 });
-    return ramp;
+    return deck;
   }
 
   private build() {
@@ -78,8 +117,9 @@ export class World {
     this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.0
     this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.6
     this.addPlatform(26, 1.8, 0, 5, 1, 4, [0.2, 0.9, 1]);      // top 2.3
-    // Single showcase incline: exactly 30° (rise = 4·tan30° ≈ 2.309 m)
-    this.addRamp(30, 0, 34, 2.3094, 0, 6);
+    // Single 30° ramp: rises from the ground to meet the platform at x=44
+    // exactly at its top (2.7 m), so slope detection and alignment line up.
+    this.addRamp(39.3231, 0, 44, 2.7, 0, 6);
     this.addPlatform(47, 2.2, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 2.7
     this.addPlatform(58, 2.8, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 3.3
 

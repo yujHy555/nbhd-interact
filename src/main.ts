@@ -11,6 +11,7 @@ import { GameAudio } from './core/GameAudio';
 import { Materials } from './world/Materials';
 import { World, Pickup, ZoneMarker, SlopeCollider } from './world/World';
 import { UI } from './ui/UI';
+import { Minimap } from './ui/Minimap';
 
 type Mode = 'welcome' | 'explore';
 
@@ -29,6 +30,7 @@ class App {
   private materials!: Materials;
   private world!: World;
   private ui!: UI;
+  private minimap!: Minimap;
   private mode: Mode = 'welcome';
   private facing = Math.PI / 2; // screen-right (+X) at start
   private lastTime = 0;
@@ -86,6 +88,8 @@ class App {
       this.audio.pickup();
     };
     this.world.onZone = (z: ZoneMarker) => { this.ui.setZone(z.name); this.audio.zone(); };
+    const mapCanvas = document.getElementById('minimap') as HTMLCanvasElement | null;
+    if (mapCanvas) this.minimap = new Minimap(mapCanvas, this.world);
 
     this.character = new Character(this.scene);
     // Face screen-right from the very first frame (idle at start)
@@ -136,12 +140,14 @@ class App {
   private enableShadowReceivers() {
     for (const m of this.scene.meshes) {
       if (m.name === 'skyBox') continue;
-      if (m.name === 'platform' || m.name === 'ramp' || m.name === 'platEdge' ||
+      if (m.name === 'platform' || m.name === 'ramp' || m.name === 'rampRail' ||
+          m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'platEdge' ||
           m.name === 'protoCube' || m.name.startsWith('zone') || m.name.includes('Ball') ||
           m.name.includes('BallPedestal') || m.name === 'macbethChart' || m.name === 'macbethFrame' ||
           m.name === 'ground' || m.name.startsWith('grid')) {
         m.receiveShadows = true;
-        if (m.name === 'platform' || m.name === 'ramp' || m.name === 'protoCube') {
+        if (m.name === 'platform' || m.name === 'ramp' || m.name === 'rampRail' ||
+            m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'protoCube') {
           this.env.registerShadowCaster(m as BABYLON.Mesh);
         }
       }
@@ -176,9 +182,9 @@ class App {
       const scale = 2.4;
       const feetOffset = -source.getBoundingInfo().boundingBox.minimum.y * scale;
       const spots = [
-        { x: 15, z: 11, face: 0 }, { x: 41, z: 14, face: Math.PI },
-        { x: 82, z: 12, face: 0 }, { x: 124, z: 15, face: Math.PI },
-        { x: 168, z: 11, face: 0 },
+        { x: 15, z: 11, face: Math.PI }, { x: 41, z: 14, face: 0 },
+        { x: 82, z: 12, face: Math.PI }, { x: 124, z: 15, face: 0 },
+        { x: 168, z: 11, face: Math.PI },
       ];
       source.setEnabled(false); // hide the import origin; instances are the herd
       spots.forEach((s, i) => {
@@ -187,7 +193,6 @@ class App {
         cow.scaling.setAll(scale);
         cow.rotation.y = s.face;
         cow.isPickable = false;
-        cow.receiveShadows = true;
         this.env.registerShadowCaster(cow);
       });
     } catch (e) {
@@ -255,7 +260,9 @@ class App {
   private wallAt(x: number, z: number, feetY: number, radius: number): boolean {
     for (const c of this.world.colliders) {
       const top = c.y + c.h / 2, bot = c.y - c.h / 2;
-      if (feetY >= top - 0.08 || feetY + 1.75 <= bot) continue;
+      // Allow a step-up of 0.3 m — otherwise the platform's side wall blocks
+      // the player at the top of a ramp before the surface snap can lift them.
+      if (feetY >= top - 0.3 || feetY + 1.75 <= bot) continue;
       if (x + radius > c.x - c.w / 2 && x - radius < c.x + c.w / 2 &&
           z + radius > c.z - c.d / 2 && z - radius < c.z + c.d / 2) return true;
     }
@@ -364,8 +371,8 @@ class App {
       p.x = cx; p.z = cz;
     }
     if (p.y < -8) { p.set(2.4, 0, 0); v.set(0, 0, 0); }
-    p.x = Math.max(-3, Math.min(198, p.x));
-    p.z = Math.max(-3.2, Math.min(3.2, p.z));
+    // No artificial X/Z bounds — the player roams the whole level freely and
+    // the camera follows.
 
     this.character.setFlip(0);
     if (landed) { this.audio.land(6); this.character.landingImpact(-8); this.camera.punch(3); }
@@ -420,7 +427,11 @@ class App {
       this.camera.update(dt, new BABYLON.Vector3(this.ppos.x, this.ppos.y + 1, this.ppos.z), this.pvel.x * 0.3);
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
+    // Keep the directional light's shadow frustum centred on the player so
+    // cast shadows stay natural and visible everywhere in the level.
+    this.env.sun.position.set(pp.x + 60, 120, -60);
     this.polish.update(dt, pp, pp.y, this.mode === 'explore' && this.pvel.length() > 0.5);
+    this.minimap?.update(pp.x, pp.z, this.mode === 'welcome' ? Math.PI / 2 : this.facing);
     this.fpsAcc += dt; this.fpsFrames++;
     if (this.fpsAcc >= 0.5) {
       this.ui.setFps(Math.round(this.fpsFrames / this.fpsAcc));

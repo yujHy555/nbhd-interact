@@ -21,27 +21,31 @@ export class Environment {
     this.scene = scene;
     this.root = new BABYLON.TransformNode('environmentRoot', scene);
 
-    // ---- Real HDRI environment (vintage measuring lab) ----
-    // .hdr files are LINEAR radiance data — gammaSpace must be false or the
-    // image gets double-gamma'd (the washed-out, milky look).
-    this.envTexture = new BABYLON.HDRCubeTexture('/hdri/vintage_measuring_lab_2k.hdr', scene, 256);
-    this.envTexture.gammaSpace = false;
+    // ---- Blue Desert equirectangular panorama: IBL + visible background ----
+    // A 2:1 LDR panorama converted into a cubemap by Babylon. One instance
+    // lights the PBR materials, a second drives the skybox at its own level.
+    const skyUrl = '/hdri/blue_desert/textures/Scene_-_Root_diffuse.jpeg';
+    // IBL needs only moderate detail; the visible skybox uses a large cube
+    // so the 4096×2048 source panorama stays crisp on screen.
+    this.envTexture = new BABYLON.EquiRectangularCubeTexture(skyUrl, scene, 512, false, false);
     scene.environmentTexture = this.envTexture as any;
-    scene.environmentIntensity = 0.85;
-    scene.ambientColor = new BABYLON.Color3(0.08, 0.09, 0.11);
+    scene.environmentIntensity = 0.95;
+    scene.ambientColor = new BABYLON.Color3(0.10, 0.12, 0.16);
 
-    // ---- Skybox showing the SAME HDRI as the background ----
-    // Use a dedicated texture instance so the skybox exposure is independent
-    // from the IBL intensity (no gray emissive tint — that desaturates it).
-    const skyTex = new BABYLON.HDRCubeTexture('/hdri/vintage_measuring_lab_2k.hdr', scene, 256);
-    skyTex.gammaSpace = false;
-    skyTex.coordinatesMode = BABYLON.Texture.SKYBOX_MODE;
-    skyTex.level = 1.45; // brighter HDRI background while keeping IBL at 0.85
-    const sky = BABYLON.MeshBuilder.CreateBox('skyBox', { size: 2000 }, scene);
+    // Visible background: the full 4096×2048 panorama mapped directly onto a
+    // sphere (no cubemap stretching). Babylon's sphere UVs invert the image,
+    // so flip V to put the sky above the horizon.
+    const skyTex = new BABYLON.Texture(skyUrl, scene);
+    skyTex.vScale = -1;
+    skyTex.vOffset = 1;
+    skyTex.level = 1.15;
+    skyTex.anisotropicFilteringLevel = 8;
+    const sky = BABYLON.MeshBuilder.CreateSphere('skyBox', { diameter: 1800, segments: 64 }, scene);
     const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
     skyMat.backFaceCulling = false;
     skyMat.disableLighting = true;
-    skyMat.reflectionTexture = skyTex;
+    skyMat.emissiveTexture = skyTex;
+    skyMat.emissiveColor = BABYLON.Color3.White();
     skyMat.diffuseColor = BABYLON.Color3.Black();
     skyMat.specularColor = BABYLON.Color3.Black();
     sky.material = skyMat;
@@ -58,7 +62,7 @@ export class Environment {
     this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
     this.shadowGen.useBlurExponentialShadowMap = true;
     this.shadowGen.blurKernel = 32;
-    this.shadowGen.darkness = 0.35;
+    this.shadowGen.darkness = 0.18; // natural but clearly visible contact shadows
     this.shadowGen.bias = 0.0015;
     this.shadowGen.normalBias = 0.02;
 
