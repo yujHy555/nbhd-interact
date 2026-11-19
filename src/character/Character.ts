@@ -1,6 +1,7 @@
 import * as BABYLON from 'babylonjs';
 
-export type AnimState = 'idle' | 'walk' | 'run' | 'jump' | 'fall' | 'land';
+export type AnimState = 'idle' | 'walk' | 'run' | 'jump' | 'fall' | 'land' | 'strafe';
+export type MoveDir = 'forward' | 'back' | 'left' | 'right' | 'idle';
 
 export interface CharacterColors {
   skin: [number, number, number];
@@ -11,25 +12,35 @@ export interface CharacterColors {
 }
 
 export const DEFAULT_COLORS: CharacterColors = {
-  skin: [0.86, 0.65, 0.48],
-  outfit: [0.12, 0.42, 0.78],
-  accent: [0.95, 0.78, 0.18],
-  shoes: [0.1, 0.12, 0.16],
-  hair: [0.18, 0.12, 0.09],
+  skin: [0.82, 0.60, 0.42],
+  outfit: [0.10, 0.36, 0.68],
+  accent: [0.98, 0.78, 0.22],
+  shoes: [0.10, 0.11, 0.14],
+  hair: [0.16, 0.11, 0.08],
 };
 
+/** One animation clip from an imported Mixamo/glTF character. */
+export interface MixamoBinding {
+  root: BABYLON.TransformNode;
+  animationGroups: BABYLON.AnimationGroup[];
+  play(name: string, loop?: boolean): boolean;
+  stopAll(): void;
+}
+
 /**
- * AAA procedural humanoid — ~1.8 m real-world scale, hierarchical rig,
- * hand-authored procedural animation states (idle/walk/run/jump/fall/land),
- * full PBR materials, cosmetics, facial detail and secondary motion.
+ * AAA character — fully hierarchical humanoid rig with correct limb axes,
+ * directional locomotion (forward/back/strafe), smooth animation blending,
+ * secondary motion, and a Mixamo/glTF binding path for production mocap.
  *
- * A .gltf character can be swapped in later without touching the game API.
+ * Rig faces -Z. All limbs hang down; elbow/knee bend along +X (forward).
  */
 export class Character {
   public root: BABYLON.TransformNode;
   public state: AnimState = 'idle';
   public colors: CharacterColors = { ...DEFAULT_COLORS };
   public onLand?: () => void;
+  public mixamo: MixamoBinding | null = null;
+
   private scene: BABYLON.Scene;
   private t = 0;
   private phase = 0;
@@ -37,19 +48,21 @@ export class Character {
   private prevState: AnimState = 'idle';
   private verticalVel = 0;
   private squash = 0;
+  private dir: MoveDir = 'idle';
+  private heading = 0;
+  private secondary = 0;
 
   // Rig nodes
   private pelvis!: BABYLON.TransformNode;
-  private torso!: BABYLON.TransformNode;
+  private spine!: BABYLON.TransformNode;
   private chest!: BABYLON.TransformNode;
+  private neck!: BABYLON.TransformNode;
   private head!: BABYLON.TransformNode;
-  private armL!: BABYLON.TransformNode; private elbowL!: BABYLON.TransformNode;
-  private armR!: BABYLON.TransformNode; private elbowR!: BABYLON.TransformNode;
-  private legL!: BABYLON.TransformNode; private kneeL!: BABYLON.TransformNode;
-  private legR!: BABYLON.TransformNode; private kneeR!: BABYLON.TransformNode;
-  private footL!: BABYLON.TransformNode; private footR!: BABYLON.TransformNode;
+  private shoulderL!: BABYLON.TransformNode; private elbowL!: BABYLON.TransformNode; private wristL!: BABYLON.TransformNode;
+  private shoulderR!: BABYLON.TransformNode; private elbowR!: BABYLON.TransformNode; private wristR!: BABYLON.TransformNode;
+  private hipL!: BABYLON.TransformNode; private kneeL!: BABYLON.TransformNode; private ankleL!: BABYLON.TransformNode;
+  private hipR!: BABYLON.TransformNode; private kneeR!: BABYLON.TransformNode; private ankleR!: BABYLON.TransformNode;
 
-  // Materials
   private skinMat!: BABYLON.PBRMaterial;
   private outfitMat!: BABYLON.PBRMaterial;
   private accentMat!: BABYLON.PBRMaterial;
@@ -66,231 +79,279 @@ export class Character {
     this.buildRig();
   }
 
+  // ---------------------------------------------------------------- materials
   private buildMaterials() {
-    const mk = (name: string) => {
+    const pbr = (name: string, rough = 0.6, metal = 0.05) => {
       const m = new BABYLON.PBRMaterial(name, this.scene);
-      m.metallic = 0.05; m.roughness = 0.62;
-      m.environmentIntensity = 0.9;
+      m.metallic = metal; m.roughness = rough;
+      m.environmentIntensity = 1.1;
       return m;
     };
-    this.skinMat = mk('charSkin');
-    this.outfitMat = mk('charOutfit');
-    this.accentMat = mk('charAccent');
-    this.shoesMat = mk('charShoes'); this.shoesMat.roughness = 0.85;
-    this.hairMat = mk('charHair'); this.hairMat.roughness = 0.9;
+    this.skinMat = pbr('charSkin', 0.72);
+    this.outfitMat = pbr('charOutfit', 0.65);
+    this.accentMat = pbr('charAccent', 0.35, 0.3);
+    this.shoesMat = pbr('charShoes', 0.85);
+    this.hairMat = pbr('charHair', 0.92);
     this.applyColors(this.colors);
 
     this.eyeMat = new BABYLON.StandardMaterial('charEyeWhite', this.scene);
     this.eyeMat.diffuseColor = BABYLON.Color3.White();
-    this.eyeMat.emissiveColor = new BABYLON.Color3(0.25, 0.25, 0.25);
+    this.eyeMat.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.3);
     this.eyeMat.disableLighting = true;
     this.pupilMat = new BABYLON.StandardMaterial('charPupil', this.scene);
-    this.pupilMat.diffuseColor = new BABYLON.Color3(0.06, 0.08, 0.12);
-    this.pupilMat.emissiveColor = new BABYLON.Color3(0.01, 0.02, 0.03);
+    this.pupilMat.diffuseColor = new BABYLON.Color3(0.05, 0.07, 0.11);
+    this.pupilMat.emissiveColor = new BABYLON.Color3(0.01, 0.01, 0.02);
     this.pupilMat.disableLighting = true;
   }
 
   public applyColors(c: CharacterColors) {
     this.colors = { ...c };
-    const set = (m: BABYLON.PBRMaterial, c3: [number, number, number]) =>
-      m.albedoColor = new BABYLON.Color3(c3[0], c3[1], c3[2]);
-    set(this.skinMat, c.skin);
-    set(this.outfitMat, c.outfit);
-    set(this.accentMat, c.accent);
-    set(this.shoesMat, c.shoes);
+    const set = (m: BABYLON.PBRMaterial, v: [number, number, number]) => m.albedoColor = new BABYLON.Color3(v[0], v[1], v[2]);
+    set(this.skinMat, c.skin); set(this.outfitMat, c.outfit);
+    set(this.accentMat, c.accent); set(this.shoesMat, c.shoes);
     set(this.hairMat, c.hair);
   }
 
-  private node(name: string, parent: BABYLON.TransformNode, x: number, y: number, z: number) {
+  // ---------------------------------------------------------------- rig helpers
+  private node(name: string, parent: BABYLON.TransformNode, x = 0, y = 0, z = 0) {
     const n = new BABYLON.TransformNode(name, this.scene);
     n.parent = parent; n.position.set(x, y, z);
     return n;
   }
 
-  private mesh(name: string, parent: BABYLON.TransformNode, opts: any, mat: BABYLON.Material,
-               pos?: [number, number, number], rot?: [number, number, number], scl?: [number, number, number]) {
-    let mesh: BABYLON.Mesh;
-    if (name.includes('Sphere') || name.includes('Cap')) mesh = BABYLON.MeshBuilder.CreateSphere(name, opts, this.scene);
-    else if (name.includes('Cyl')) mesh = BABYLON.MeshBuilder.CreateCylinder(name, opts, this.scene);
-    else mesh = BABYLON.MeshBuilder.CreateBox(name, opts, this.scene);
-    mesh.parent = parent;
-    if (pos) mesh.position.set(pos[0], pos[1], pos[2]);
-    if (rot) mesh.rotation.set(rot[0], rot[1], rot[2]);
-    if (scl) mesh.scaling.set(scl[0], scl[1], scl[2]);
-    mesh.material = mat;
-    this.meshes.push(mesh);
-    return mesh;
+  private mesh(name: string, parent: BABYLON.TransformNode, shape: 'box' | 'sphere' | 'cyl' | 'cap',
+    opts: any, mat: BABYLON.Material, pos: [number, number, number] = [0, 0, 0],
+    rot: [number, number, number] = [0, 0, 0], scl: [number, number, number] = [1, 1, 1]) {
+    let m: BABYLON.Mesh;
+    if (shape === 'sphere') m = BABYLON.MeshBuilder.CreateSphere(name, opts, this.scene);
+    else if (shape === 'cap') m = BABYLON.MeshBuilder.CreateSphere(name, opts, this.scene);
+    else if (shape === 'cyl') m = BABYLON.MeshBuilder.CreateCylinder(name, opts, this.scene);
+    else m = BABYLON.MeshBuilder.CreateBox(name, opts, this.scene);
+    m.parent = parent; m.position.set(pos[0], pos[1], pos[2]);
+    m.rotation.set(rot[0], rot[1], rot[2]); m.scaling.set(scl[0], scl[1], scl[2]);
+    m.material = mat; m.isPickable = false;
+    this.meshes.push(m);
+    return m;
   }
 
   private buildRig() {
-    // Pelvis at 0.95m — total height ~1.8m
-    this.pelvis = this.node('pelvis', this.root, 0, 0.95, 0);
-    this.mesh('pelvisSphere', this.pelvis, { diameter: 0.42, segments: 16 }, this.outfitMat, [0, 0, 0], undefined, [1.25, 0.7, 0.8]);
+    // ---- Core ----
+    this.pelvis = this.node('pelvis', this.root, 0, 0.96, 0);
+    this.mesh('pelvisMesh', this.pelvis, 'sphere', { diameter: 0.36, segments: 16 }, this.outfitMat, [0, 0, 0], [0, 0, 0], [1.15, 0.72, 0.85]);
+    this.mesh('belt', this.pelvis, 'cyl', { diameter: 0.38, height: 0.08, tessellation: 20 }, this.accentMat, [0, 0.04, 0]);
 
-    // Torso + chest
-    this.torso = this.node('torso', this.pelvis, 0, 0.16, 0);
-    this.mesh('torsoSphere', this.torso, { diameter: 0.5, segments: 16 }, this.outfitMat, [0, 0.16, 0], undefined, [1.15, 1.35, 0.75]);
-    // Accent stripe / belt
-    this.mesh('beltCyl', this.pelvis, { diameter: 0.46, height: 0.09, tessellation: 20 }, this.accentMat, [0, 0.05, 0]);
+    this.spine = this.node('spine', this.pelvis, 0, 0.14, 0);
+    this.mesh('spineMesh', this.spine, 'sphere', { diameter: 0.38, segments: 16 }, this.outfitMat, [0, 0.14, 0], [0, 0, 0], [1.05, 1.35, 0.78]);
 
-    this.chest = this.node('chest', this.torso, 0, 0.34, 0);
-    this.mesh('chestSphere', this.chest, { diameter: 0.54, segments: 16 }, this.outfitMat, [0, 0.02, 0], undefined, [1.2, 0.9, 0.8]);
-    // Chest emblem
-    this.mesh('accentCyl', this.chest, { diameter: 0.14, height: 0.03, tessellation: 6 }, this.accentMat, [0, 0.04, -0.24], [Math.PI / 2, 0, 0]);
+    this.chest = this.node('chest', this.spine, 0, 0.30, 0);
+    this.mesh('chestMesh', this.chest, 'sphere', { diameter: 0.42, segments: 16 }, this.outfitMat, [0, 0.06, 0], [0, 0, 0], [1.25, 0.95, 0.82]);
+    this.mesh('chestEmblem', this.chest, 'cyl', { diameter: 0.13, height: 0.03, tessellation: 6 }, this.accentMat, [0, 0.08, -0.19], [Math.PI / 2, 0, 0]);
 
-    // Head
-    this.head = this.node('head', this.chest, 0, 0.34, 0);
-    this.mesh('headSphere', this.head, { diameter: 0.32, segments: 20 }, this.skinMat, [0, 0.12, 0], undefined, [1, 1.08, 0.95]);
-    // Hair cap
-    this.mesh('hairCap', this.head, { diameter: 0.34, segments: 20, slice: 0.55 }, this.hairMat, [0, 0.15, 0], undefined, [1.02, 1.05, 1]);
-    // Eyes + pupils (face -Z)
+    // ---- Neck + head ----
+    this.neck = this.node('neck', this.chest, 0, 0.27, 0);
+    this.mesh('neckMesh', this.neck, 'cyl', { diameter: 0.12, height: 0.12, tessellation: 12 }, this.skinMat, [0, 0.03, 0]);
+    this.head = this.node('head', this.neck, 0, 0.14, 0);
+    this.mesh('headMesh', this.head, 'sphere', { diameter: 0.30, segments: 20 }, this.skinMat, [0, 0.10, 0], [0, 0, 0], [0.96, 1.08, 0.92]);
+    // Hair cap sits on top, no overlap with eyes
+    this.mesh('hairCap', this.head, 'cap', { diameter: 0.315, segments: 20, slice: 0.52 }, this.hairMat, [0, 0.135, 0.012], [0, 0, 0], [0.99, 1.0, 0.98]);
+    // Eyes on the -Z face, pupils slightly proud
     for (const sx of [-1, 1]) {
-      const eye = BABYLON.MeshBuilder.CreateSphere('eye' + sx, { diameter: 0.085, segments: 10 }, this.scene);
-      eye.parent = this.head; eye.position.set(sx * 0.07, 0.14, -0.145);
+      const eye = BABYLON.MeshBuilder.CreateSphere('eye' + sx, { diameter: 0.082, segments: 12 }, this.scene);
+      eye.parent = this.head; eye.position.set(sx * 0.068, 0.11, -0.135);
       eye.material = this.eyeMat; this.meshes.push(eye);
-      const pupil = BABYLON.MeshBuilder.CreateSphere('pupil' + sx, { diameter: 0.042, segments: 8 }, this.scene);
-      pupil.parent = eye; pupil.position.set(0, 0, -0.035);
+      const pupil = BABYLON.MeshBuilder.CreateSphere('pupil' + sx, { diameter: 0.04, segments: 10 }, this.scene);
+      pupil.parent = eye; pupil.position.set(0, 0, -0.032);
       pupil.material = this.pupilMat; this.meshes.push(pupil);
     }
-    // Nose + mouth hint
-    this.mesh('noseSphere', this.head, { diameter: 0.06, segments: 8 }, this.skinMat, [0, 0.08, -0.17]);
-    this.mesh('mouthBox', this.head, { width: 0.08, height: 0.015, depth: 0.01 }, this.pupilMat, [0, 0.01, -0.16]);
+    this.mesh('nose', this.head, 'sphere', { diameter: 0.055, segments: 10 }, this.skinMat, [0, 0.055, -0.155]);
+    this.mesh('mouth', this.head, 'box', { width: 0.075, height: 0.014, depth: 0.012 }, this.pupilMat, [0, -0.005, -0.15]);
 
-    // Arms
-    const buildArm = (side: number) => {
-      const shoulder = this.node('shoulder' + side, this.chest, side * 0.32, 0.14, 0);
-      this.mesh('shoulderSphere' + side, shoulder, { diameter: 0.16, segments: 12 }, this.outfitMat);
-      return shoulder;
+    // ---- Arms (hang down, bend forward at elbow) ----
+    const buildArm = (side: -1 | 1) => {
+      const shoulder = this.node('shoulder' + side, this.chest, side * 0.28, 0.18, 0);
+      this.mesh('deltoid' + side, shoulder, 'sphere', { diameter: 0.16, segments: 12 }, this.outfitMat, [0, -0.02, 0]);
+      // Upper arm: 0.28 long, hangs DOWN (-Y) from shoulder
+      this.mesh('upperArm' + side, shoulder, 'cyl', { diameter: 0.11, height: 0.28, tessellation: 12 }, this.skinMat, [0, -0.15, 0]);
+      const elbow = this.node('elbow' + side, shoulder, 0, -0.30, 0);
+      this.mesh('elbowJoint' + side, elbow, 'sphere', { diameter: 0.105, segments: 10 }, this.skinMat);
+      // Forearm 0.26 long
+      this.mesh('forearm' + side, elbow, 'cyl', { diameter: 0.095, height: 0.26, tessellation: 12 }, this.skinMat, [0, -0.14, 0]);
+      // Wrist cuff + hand
+      this.mesh('cuff' + side, elbow, 'cyl', { diameter: 0.11, height: 0.06, tessellation: 12 }, this.accentMat, [0, -0.27, 0]);
+      const wrist = this.node('wrist' + side, elbow, 0, -0.30, 0);
+      this.mesh('hand' + side, wrist, 'sphere', { diameter: 0.12, segments: 10 }, this.skinMat, [0, -0.055, 0], [0, 0, 0], [0.9, 1.1, 0.75]);
+      return { shoulder, elbow, wrist };
     };
-    this.armL = buildArm(-1);
-    this.armR = buildArm(1);
-    this.elbowL = this.node('elbowL', this.armL, 0, -0.3, 0);
-    this.elbowR = this.node('elbowR', this.armR, 0, -0.3, 0);
-    for (const [arm, elbow, side] of [[this.armL, this.elbowL, -1], [this.armR, this.elbowR, 1]] as any[]) {
-      this.mesh('upperArmCyl' + side, arm, { diameter: 0.12, height: 0.32, tessellation: 12 }, this.skinMat, [0, -0.16, 0]);
-      this.mesh('lowerArmCyl' + side, elbow, { diameter: 0.1, height: 0.3, tessellation: 12 }, this.skinMat, [0, -0.15, 0]);
-      this.mesh('handSphere' + side, elbow, { diameter: 0.13, segments: 10 }, this.skinMat, [0, -0.32, 0]);
-    }
+    const aL = buildArm(-1), aR = buildArm(1);
+    this.shoulderL = aL.shoulder; this.elbowL = aL.elbow; this.wristL = aL.wrist;
+    this.shoulderR = aR.shoulder; this.elbowR = aR.elbow; this.wristR = aR.wrist;
 
-    // Legs
-    const buildLeg = (side: number) => {
-      const hip = this.node('hip' + side, this.pelvis, side * 0.15, -0.1, 0);
+    // ---- Legs ----
+    const buildLeg = (side: -1 | 1) => {
+      const hip = this.node('hip' + side, this.pelvis, side * 0.135, -0.08, 0);
+      this.mesh('thigh' + side, hip, 'cyl', { diameter: 0.15, height: 0.44, tessellation: 14 }, this.outfitMat, [0, -0.22, 0]);
       const knee = this.node('knee' + side, hip, 0, -0.44, 0);
-      const foot = this.node('foot' + side, knee, 0, -0.44, 0);
-      this.mesh('upperLegCyl' + side, hip, { diameter: 0.17, height: 0.46, tessellation: 14 }, this.outfitMat, [0, -0.22, 0]);
-      this.mesh('lowerLegCyl' + side, knee, { diameter: 0.14, height: 0.44, tessellation: 14 }, this.outfitMat, [0, -0.22, 0]);
-      // Shoe points forward (-Z)
-      this.mesh('shoeBox' + side, foot, { width: 0.18, height: 0.12, depth: 0.34 }, this.shoesMat, [0, -0.02, -0.07]);
-      this.mesh('soleBox' + side, foot, { width: 0.19, height: 0.04, depth: 0.35 }, this.accentMat, [0, -0.08, -0.07]);
-      return { hip, knee, foot };
+      this.mesh('kneeJoint' + side, knee, 'sphere', { diameter: 0.14, segments: 10 }, this.outfitMat);
+      this.mesh('shin' + side, knee, 'cyl', { diameter: 0.12, height: 0.42, tessellation: 14 }, this.outfitMat, [0, -0.21, 0]);
+      // Sock + shoe at the ankle, shoe points forward (-Z)
+      const ankle = this.node('ankle' + side, knee, 0, -0.42, 0);
+      this.mesh('sock' + side, ankle, 'cyl', { diameter: 0.125, height: 0.08, tessellation: 12 }, this.accentMat, [0, -0.02, 0]);
+      this.mesh('shoe' + side, ankle, 'box', { width: 0.17, height: 0.11, depth: 0.32 }, this.shoesMat, [0, -0.08, -0.075]);
+      this.mesh('sole' + side, ankle, 'box', { width: 0.175, height: 0.035, depth: 0.33 }, this.accentMat, [0, -0.135, -0.075]);
+      return { hip, knee, ankle };
     };
-    const L = buildLeg(-1), R = buildLeg(1);
-    this.legL = L.hip; this.kneeL = L.knee; this.footL = L.foot;
-    this.legR = R.hip; this.kneeR = R.knee; this.footR = R.foot;
+    const lL = buildLeg(-1), lR = buildLeg(1);
+    this.hipL = lL.hip; this.kneeL = lL.knee; this.ankleL = lL.ankle;
+    this.hipR = lR.hip; this.kneeR = lR.knee; this.ankleR = lR.ankle;
   }
 
-  public getMeshes() { return this.meshes; }
+  // ---------------------------------------------------------------- Mixamo
+  /** Bind an imported Mixamo-style glTF character and its animation groups. */
+  public bindMixamo(binding: MixamoBinding) {
+    this.mixamo = binding;
+    binding.root.parent = this.root;
+    // Hide procedural mesh while the mocap character is bound
+    for (const m of this.meshes) m.setEnabled(false);
+  }
+  public unbindMixamo() {
+    this.mixamo?.stopAll();
+    this.mixamo = null;
+    for (const m of this.meshes) m.setEnabled(true);
+  }
+  public playMocap(name: string) { return this.mixamo?.play(name, true) ?? false; }
 
+  // ---------------------------------------------------------------- public API
+  public getMeshes() { return this.meshes; }
   public setPosition(x: number, y: number, z: number) { this.root.position.set(x, y, z); }
   public get position() { return this.root.position; }
 
-  /** Drive an animation state; speed in m/s for walk/run cycle rate. */
-  public setState(s: AnimState, verticalVel = 0) {
+  public setState(s: AnimState, verticalVel = 0, dir: MoveDir = 'idle') {
+    this.dir = dir;
+    this.verticalVel = verticalVel;
     if (s !== this.state) {
       this.prevState = this.state;
       this.state = s;
       this.blend = 0;
       if (s === 'land') this.onLand?.();
     }
-    this.verticalVel = verticalVel;
+    if (this.mixamo) {
+      const clip = s === 'run' ? 'run' : s === 'walk' ? 'walk' : s === 'jump' ? 'jump' : 'idle';
+      this.playMocap(clip);
+    }
   }
 
-  public update(dt: number, speed: number, facing = 1) {
+  private L(a: number, b: number, f: number) { return a + (b - a) * f; }
+
+  public update(dt: number, speed: number, heading: number) {
     this.t += dt;
-    this.blend = Math.min(1, this.blend + dt * 10);
-    const targetFacing = facing >= 0 ? -Math.PI / 2 : Math.PI / 2;
-    let d = targetFacing - this.root.rotation.y;
-    while (d > Math.PI) d -= Math.PI * 2;
-    while (d < -Math.PI) d += Math.PI * 2;
-    this.root.rotation.y += d * Math.min(1, dt * 10);
+    this.blend = Math.min(1, this.blend + dt * 9);
+    this.heading = heading;
+    // Face movement heading (character faces -Z at heading 0)
+    let dh = heading - this.root.rotation.y;
+    while (dh > Math.PI) dh -= Math.PI * 2;
+    while (dh < -Math.PI) dh += Math.PI * 2;
+    this.root.rotation.y += dh * Math.min(1, dt * 12);
 
-    const moving = this.state === 'walk' || this.state === 'run';
-    const rate = this.state === 'run' ? 10 : this.state === 'walk' ? 6.5 : 0;
-    if (moving) this.phase += dt * rate;
-    else this.phase = 0;
+    if (this.mixamo) { this.updateSecondaryOnly(dt); return; }
 
-    // Target pose values (lerped for smooth transitions)
-    let swing = 0, kneeBend = 0, armSwing = 0, bodyBob = 0, lean = 0, headTilt = 0;
+    const moving = this.state === 'walk' || this.state === 'run' || this.state === 'strafe';
+    const rate = this.state === 'run' ? 11 : this.state === 'walk' ? 7 : this.state === 'strafe' ? 7.5 : 0;
+    if (moving) this.phase += dt * rate; else this.phase = 0;
+    const k = Math.min(1, dt * 14);
+
+    // Directional multiplier: backward walk reverses the cycle, strafe adds lean
+    const back = this.dir === 'back' ? -1 : 1;
+    const strafe = this.dir === 'left' || this.dir === 'right' ? 1 : 0;
+    const stride = this.state === 'run' ? 0.95 : this.state === 'walk' ? 0.62 : 0.42;
+
+    let hipL = 0, hipR = 0, kneeL = 0, kneeR = 0;
+    let armL = 0, armR = 0, elbowL = 0, elbowR = 0;
+    let bob = 0, lean = 0, sideLean = 0, headTilt = 0;
+
     switch (this.state) {
       case 'idle': {
-        const breathe = Math.sin(this.t * 1.8);
-        bodyBob = breathe * 0.012;
-        armSwing = breathe * 0.04;
-        headTilt = Math.sin(this.t * 0.7) * 0.05;
+        const br = Math.sin(this.t * 1.7);
+        bob = br * 0.012;
+        armL = br * 0.05; armR = -br * 0.05;
+        headTilt = Math.sin(this.t * 0.62) * 0.06;
+        elbowL = elbowR = -0.08;
         break;
       }
-      case 'walk':
-        swing = Math.sin(this.phase) * 0.5;
-        armSwing = -Math.sin(this.phase) * 0.45;
-        kneeBend = Math.max(0, -Math.sin(this.phase)) * 0.55;
-        bodyBob = Math.abs(Math.sin(this.phase)) * 0.035;
-        lean = 0.05;
+      case 'walk': case 'run': case 'strafe': {
+        const s = Math.sin(this.phase) * stride * back;
+        hipL = s; hipR = -s;
+        kneeL = Math.max(0, -Math.sin(this.phase) * back) * (this.state === 'run' ? 1.0 : 0.6);
+        kneeR = Math.max(0, Math.sin(this.phase) * back) * (this.state === 'run' ? 1.0 : 0.6);
+        armL = -s * (this.state === 'run' ? 0.85 : 0.7);
+        armR = s * (this.state === 'run' ? 0.85 : 0.7);
+        elbowL = elbowR = -(this.state === 'run' ? 0.6 : 0.35);
+        bob = Math.abs(Math.sin(this.phase)) * (this.state === 'run' ? 0.07 : 0.035);
+        lean = this.state === 'run' ? 0.18 : 0.06;
+        sideLean = strafe * (this.dir === 'right' ? -0.1 : 0.1);
         break;
-      case 'run':
-        swing = Math.sin(this.phase) * 0.85;
-        armSwing = -Math.sin(this.phase) * 0.8;
-        kneeBend = Math.max(0, -Math.sin(this.phase)) * 0.9;
-        bodyBob = Math.abs(Math.sin(this.phase)) * 0.06;
-        lean = 0.16;
-        break;
+      }
       case 'jump':
-        swing = 0.3; kneeBend = 0.9; armSwing = -1.1;
-        lean = -0.05;
+        hipL = 0.35; hipR = -0.2; kneeL = 1.0; kneeR = 0.5;
+        armL = -1.1; armR = -1.1; elbowL = elbowR = -0.3;
+        lean = -0.06;
         break;
       case 'fall':
-        swing = -0.2; kneeBend = 0.45; armSwing = -0.9;
+        hipL = -0.15; hipR = 0.25; kneeL = 0.5; kneeR = 0.35;
+        armL = -0.85; armR = -0.85;
+        lean = 0.05;
         break;
       case 'land':
-        swing = 0.1; kneeBend = 0.7; armSwing = 0.2;
-        bodyBob = -0.12;
+        hipL = 0.18; hipR = -0.18; kneeL = 0.85; kneeR = 0.85;
+        armL = 0.25; armR = 0.25;
+        bob = -0.1;
         break;
     }
 
-    const k = moving ? Math.min(1, dt * 12) : Math.min(1, dt * 10);
-    const Lerp = (a: number, b: number, f: number) => a + (b - a) * f;
+    // Apply with smoothing
+    this.hipL.rotation.x = this.L(this.hipL.rotation.x, hipL, k);
+    this.hipR.rotation.x = this.L(this.hipR.rotation.x, hipR, k);
+    this.kneeL.rotation.x = this.L(this.kneeL.rotation.x, -kneeL, k); // knee bends backward
+    this.kneeR.rotation.x = this.L(this.kneeR.rotation.x, -kneeR, k);
+    this.ankleL.rotation.x = this.L(this.ankleL.rotation.x, this.state === 'jump' ? 0.4 : kneeL * 0.3, k);
+    this.ankleR.rotation.x = this.L(this.ankleR.rotation.x, this.state === 'jump' ? 0.4 : kneeR * 0.3, k);
 
-    this.legL.rotation.x = Lerp(this.legL.rotation.x, swing, k);
-    this.legR.rotation.x = Lerp(this.legR.rotation.x, -swing, k);
-    this.kneeL.rotation.x = Lerp(this.kneeL.rotation.x, -kneeBend, k);
-    this.kneeR.rotation.x = Lerp(this.kneeR.rotation.x, -(this.state === 'walk' || this.state === 'run' ? Math.max(0, Math.sin(this.phase)) * (this.state === 'run' ? 0.9 : 0.55) : kneeBend), k);
-    this.footL.rotation.x = Lerp(this.footL.rotation.x, this.state === 'jump' ? 0.4 : 0, k);
-    this.footR.rotation.x = Lerp(this.footR.rotation.x, this.state === 'jump' ? 0.4 : 0, k);
+    this.shoulderL.rotation.x = this.L(this.shoulderL.rotation.x, armL, k);
+    this.shoulderR.rotation.x = this.L(this.shoulderR.rotation.x, armR, k);
+    this.shoulderL.rotation.z = this.L(this.shoulderL.rotation.z, -0.10, k);
+    this.shoulderR.rotation.z = this.L(this.shoulderR.rotation.z, 0.10, k);
+    this.elbowL.rotation.x = this.L(this.elbowL.rotation.x, elbowL, k);
+    this.elbowR.rotation.x = this.L(this.elbowR.rotation.x, elbowR, k);
+    this.wristL.rotation.x = this.L(this.wristL.rotation.x, -0.1, k);
+    this.wristR.rotation.x = this.L(this.wristR.rotation.x, -0.1, k);
 
-    this.armL.rotation.x = Lerp(this.armL.rotation.x, armSwing, k);
-    this.armR.rotation.x = Lerp(this.armR.rotation.x, -armSwing, k);
-    this.armL.rotation.z = Lerp(this.armL.rotation.z, -0.12, k);
-    this.armR.rotation.z = Lerp(this.armR.rotation.z, 0.12, k);
-    this.elbowL.rotation.x = Lerp(this.elbowL.rotation.x, this.state === 'run' ? -0.7 : -0.2, k);
-    this.elbowR.rotation.x = Lerp(this.elbowR.rotation.x, this.state === 'run' ? -0.7 : -0.2, k);
+    this.spine.rotation.x = this.L(this.spine.rotation.x, lean, k);
+    this.spine.rotation.z = this.L(this.spine.rotation.z, sideLean, k);
+    this.chest.rotation.x = this.L(this.chest.rotation.x, lean * 0.5, k);
+    this.pelvis.position.y = this.L(this.pelvis.position.y, 0.96 + bob + this.squash, k);
+    this.head.rotation.z = this.L(this.head.rotation.z, headTilt, k);
+    this.head.rotation.y = this.L(this.head.rotation.y, Math.sin(this.t * 0.5) * 0.05, k);
 
-    this.torso.rotation.x = Lerp(this.torso.rotation.x, lean, k);
-    this.pelvis.position.y = Lerp(this.pelvis.position.y, 0.95 + bodyBob + this.squash, k);
-    this.head.rotation.z = Lerp(this.head.rotation.z, headTilt, k);
-    this.head.rotation.y = Lerp(this.head.rotation.y, Math.sin(this.t * 0.5) * 0.06, k);
+    // Secondary motion: torso counter-rotation to hips adds life
+    this.secondary = this.L(this.secondary, moving ? Math.sin(this.phase) * 0.06 * back : 0, k);
+    this.chest.rotation.y = this.secondary;
 
     if (this.squash !== 0) this.squash = Math.abs(this.squash) < 0.001 ? 0 : this.squash * Math.pow(0.01, dt);
   }
 
+  private updateSecondaryOnly(dt: number) {
+    this.t += dt;
+    this.secondary = Math.sin(this.t * 1.5) * 0.01;
+  }
+
   public landingImpact(v: number) {
-    this.squash = -Math.min(0.16, Math.abs(v) * 0.012);
+    this.squash = -Math.min(0.14, Math.abs(v) * 0.012);
     this.setState('land');
   }
 
   public dispose() {
     this.root.dispose(false, false);
     for (const m of this.meshes) m.dispose();
-    this.skinMat.dispose(); this.outfitMat.dispose(); this.accentMat.dispose();
-    this.shoesMat.dispose(); this.hairMat.dispose();
+    for (const m of [this.skinMat, this.outfitMat, this.accentMat, this.shoesMat, this.hairMat]) m.dispose();
     this.eyeMat.dispose(); this.pupilMat.dispose();
   }
 }

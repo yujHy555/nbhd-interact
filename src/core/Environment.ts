@@ -21,21 +21,25 @@ export class Environment {
     this.scene = scene;
     this.root = new BABYLON.TransformNode('environmentRoot', scene);
 
-    // ---- Procedural HDRI-style environment ----
-    this.envTexture = this.createProceduralEnv();
+    // ---- Real HDRI environment (vintage measuring lab) ----
+    this.envTexture = new BABYLON.HDRCubeTexture('/hdri/vintage_measuring_lab_2k.hdr', scene, 256);
     scene.environmentTexture = this.envTexture as any;
-    scene.environmentIntensity = 0.85;
+    scene.environmentIntensity = 1.1;
     scene.ambientColor = new BABYLON.Color3(0.12, 0.14, 0.18);
 
-    // ---- Skybox matching the environment ----
+    // ---- Skybox showing the SAME HDRI as the background ----
     const sky = BABYLON.MeshBuilder.CreateBox('skyBox', { size: 2000 }, scene);
     const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
     skyMat.backFaceCulling = false;
     skyMat.disableLighting = true;
-    skyMat.emissiveTexture = this.createSkyTexture();
+    skyMat.reflectionTexture = this.envTexture;
+    skyMat.reflectionTexture.coordinatesMode = BABYLON.Texture.SKYBOX_MODE;
+    skyMat.reflectionTexture.level = 1.0;
+    skyMat.emissiveColor = new BABYLON.Color3(0.55, 0.55, 0.55);
     sky.material = skyMat;
     sky.isPickable = false;
     sky.infiniteDistance = true;
+    sky.applyFog = false;
 
     // ---- Sun (directional) with shadows ----
     this.sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.55, -1, 0.35), scene);

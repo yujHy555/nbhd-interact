@@ -1,11 +1,13 @@
 import * as BABYLON from 'babylonjs';
 import 'babylonjs-loaders';
 import { Environment } from './core/Environment';
+import { HavokWorld } from './core/HavokWorld';
 import { Input } from './core/Input';
 import { CameraRig } from './core/CameraRig';
-import { Character, DEFAULT_COLORS, CharacterColors, AnimState } from './character/Character';
+import { Character, DEFAULT_COLORS, CharacterColors, AnimState, MoveDir } from './character/Character';
+import { MixamoController } from './character/Mixamo';
 import { Materials } from './world/Materials';
-import { World, BoxCollider, Pickup, ZoneMarker } from './world/World';
+import { World, Pickup, ZoneMarker } from './world/World';
 import { UI } from './ui/UI';
 
 type Mode = 'welcome' | 'explore';
@@ -15,24 +17,30 @@ class App {
   private engine!: BABYLON.Engine;
   private scene!: BABYLON.Scene;
   private env!: Environment;
+  private havok!: HavokWorld;
   private input!: Input;
   private camera!: CameraRig;
   private character!: Character;
+  private mixamo!: MixamoController;
   private materials!: Materials;
   private world!: World;
   private ui!: UI;
   private mode: Mode = 'welcome';
   private turntableOn = false;
   private turntableAngle = 0;
-  private pos = new BABYLON.Vector3(0, 0.3, 0);
-  private vel = new BABYLON.Vector3(0, 0, 0);
-  private grounded = true;
-  private facing = 1;
+  private facing = 0;           // heading in radians (0 = -Z forward)
   private lastTime = 0;
   private fpsAcc = 0; private fpsFrames = 0;
   private pickupCount = 0;
   private debug = false;
   private keys = new Set<string>();
+
+  // Havok player
+  private playerBody!: BABYLON.PhysicsBody;
+  private playerProxy!: BABYLON.Mesh;
+  private grounded = false;
+  private coyote = 0;
+  private jumpBuffer = 0;
 
   constructor() {
     this.canvas = document.getElementById('renderCanvas') as HTMLCanvasElement;
@@ -40,14 +48,13 @@ class App {
   }
 
   private async init() {
-    // Engine
     this.engine = new BABYLON.Engine(this.canvas, true, { stencil: true, preserveDrawingBuffer: false });
     this.scene = new BABYLON.Scene(this.engine);
     this.scene.clearColor = new BABYLON.Color4(0.11, 0.15, 0.19, 1);
     this.scene.imageProcessingConfiguration.toneMappingEnabled = true;
     this.scene.imageProcessingConfiguration.toneMappingType = BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
     this.scene.imageProcessingConfiguration.exposure = 1.15;
-    this.scene.imageProcessingConfiguration.contrast = 1.15;
+    this.scene.imageProcessingConfiguration.contrast = 1.12;
 
     this.ui = new UI(DEFAULT_COLORS, {
       customize: (c: CharacterColors) => this.character.applyColors(c),
@@ -55,7 +62,13 @@ class App {
       explore: () => this.startExploring(),
     });
 
-    this.ui.setLoading(20);
+    this.ui.setLoading(12);
+
+    // ---- Havok physics ----
+    this.havok = new HavokWorld(this.scene);
+    await this.havok.init(-24);
+    this.ui.setLoading(35);
+
     this.env = new Environment(this.scene);
     this.ui.setLoading(55);
 
@@ -67,33 +80,98 @@ class App {
       this.camera.punch(3);
       this.flashPickup(p);
     };
-    this.world.onZone = (z: ZoneMarker) => this.enterZone(z);
+    this.world.onZone = (z: ZoneMarker) => this.ui.setZone(z.name);
 
     this.character = new Character(this.scene);
+    // Mixamo pipeline: drop a converted .glb at /models/character.glb to auto-load
+    this.mixamo = new MixamoController(this.scene);
+    this.mixamo.load('/models/character.glb').then((ok) => {
+      if (ok) this.character.bindMixamo(this.mixamo);
+    });
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.character.setPosition(0, 0.3, 0);
+
+    // ---- Havok static colliders for every platform/ramp ----
+    this.buildPhysicsColliders();
+    // ---- Havok dynamic player capsule ----
+    this.buildPlayerPhysics();
+
+    // ---- All surfaces receive shadows ----
+    this.enableShadowReceivers();
+
     this.ui.setLoading(85);
 
     this.input = new Input();
     this.camera = new CameraRig(this.scene, this.canvas);
+    // Restrict camera so it can never rotate under the ground
+    const arc = this.camera.getCamera() as BABYLON.ArcRotateCamera;
+    arc.lowerBetaLimit = 0.25;      // never directly overhead
+    arc.upperBetaLimit = 1.42;      // never below the horizon / through ground
+    arc.lowerRadiusLimit = 6;
+    arc.upperRadiusLimit = 26;
+    arc.panningSensibility = 0;     // disable panning through geometry
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
-    this.camera.distance = 13;
 
-    // Debug toggle — visualise colliders (press `~`)
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (e.code === 'Backquote') { this.debug = !this.debug; this.toggleDebug(); }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
 
-    // Simulate loading then reveal
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 400));
     this.ui.setLoading(100);
     this.ui.hideLoading();
-    this.lastTime = performance.now();
     (window as any).__nbhd = this;
+    this.lastTime = performance.now();
     this.engine.runRenderLoop(() => this.frame());
     window.addEventListener('resize', () => this.engine.resize());
+  }
+
+  /** Static Havok bodies from the world's box colliders. */
+  private buildPhysicsColliders() {
+    // Ground plane as a thin static box (the visual ground is infinite-ish)
+    const groundBody = BABYLON.MeshBuilder.CreateBox('physGround', { width: 400, height: 0.5, depth: 80 }, this.scene);
+    groundBody.position.set(90, -0.25, 0);
+    groundBody.isVisible = false;
+    this.havok.staticBody(groundBody, this.havok.boxShape(400, 0.5, 80));
+    for (const c of this.world.colliders) {
+      const proxy = BABYLON.MeshBuilder.CreateBox('physProxy', { width: c.w, height: c.h, depth: c.d }, this.scene);
+      proxy.position.set(c.x, c.y, c.z);
+      proxy.isVisible = false;
+      const body = this.havok.staticBody(proxy, this.havok.boxShape(c.w, c.h, c.d));
+      void body;
+    }
+  }
+
+  /** Capsule physics body for the player — AAA grounded movement via Havok. */
+  private buildPlayerPhysics() {
+    this.playerProxy = BABYLON.MeshBuilder.CreateCylinder('playerProxy', { diameter: 0.64, height: 1.0, tessellation: 12 }, this.scene);
+    this.playerProxy.isVisible = false;
+    // Capsule centre must be 0.82 m above the surface (half-height 0.5 + radius 0.32)
+    this.playerProxy.position.set(2.4, 0.82, 0);
+    const shape = this.havok.capsuleShape(0.32, 1.0);
+    this.playerBody = this.havok.dynamicBody(this.playerProxy, shape, { mass: 72, linearDamping: 0.02, angularDamping: 1 });
+    // Lock rotation so the capsule never tips over
+    this.playerBody.setMassProperties({ ...this.playerBody.computeMassProperties(), inertia: BABYLON.Vector3.Zero(), inertiaOrientation: BABYLON.Quaternion.Identity() });
+    (this.playerBody as any).setGravityFactor?.(1);
+  }
+
+  /** Register every platform / surface mesh as a shadow receiver. */
+  private enableShadowReceivers() {
+    for (const m of this.scene.meshes) {
+      if (m === this.playerProxy || m.name.startsWith('physProxy') || m.name === 'skyBox') continue;
+      // Every solid surface receives shadows
+      if (m.name === 'platform' || m.name === 'ramp' || m.name === 'turntable' || m.name === 'platEdge' ||
+          m.name === 'protoCube' || m.name.startsWith('zone') || m.name.includes('Ball') ||
+          m.name.includes('BallPedestal') || m.name === 'macbethChart' || m.name === 'macbethFrame' ||
+          m.name === 'ground' || m.name === 'gridLine' || m.name === 'gridLineZ') {
+        m.receiveShadows = true;
+        if (m.name === 'platform' || m.name === 'ramp' || m.name === 'turntable' || m.name === 'protoCube') {
+          this.env.registerShadowCaster(m as BABYLON.Mesh);
+        }
+      }
+    }
+    this.env.ground.receiveShadows = true;
   }
 
   private debugMeshes: BABYLON.Mesh[] = [];
@@ -115,144 +193,123 @@ class App {
   private flashPickup(p: Pickup) {
     const ring = BABYLON.MeshBuilder.CreateTorus('pickupRing', { diameter: 1, thickness: 0.06, tessellation: 20 }, this.scene);
     ring.position.copyFrom(p.mesh.position);
-    ring.material = new BABYLON.StandardMaterial('pickupRingMat', this.scene);
-    (ring.material as BABYLON.StandardMaterial).emissiveColor = new BABYLON.Color3(1, 0.85, 0.3);
-    (ring.material as BABYLON.StandardMaterial).disableLighting = true;
+    (ring.material as BABYLON.Material)?.dispose?.();
+    const mat = new BABYLON.StandardMaterial('pickupRingMat', this.scene);
+    mat.emissiveColor = new BABYLON.Color3(1, 0.85, 0.3);
+    mat.disableLighting = true;
+    ring.material = mat;
     let life = 0.5;
     const obs = this.scene.onBeforeRenderObservable.add(() => {
       life -= this.engine.getDeltaTime() / 1000;
       ring.scaling.setAll(1 + (0.5 - life) * 4);
-      ((ring.material as BABYLON.StandardMaterial).alpha = Math.max(0, life * 2));
-      if (life <= 0) { this.scene.onBeforeRenderObservable.remove(obs); ring.dispose(); }
+      mat.alpha = Math.max(0, life * 2);
+      if (life <= 0) { this.scene.onBeforeRenderObservable.remove(obs); ring.dispose(); mat.dispose(); }
     });
   }
 
   private startExploring() {
     this.mode = 'explore';
     this.turntableOn = false;
-    this.pos.set(2.4, this.groundHeight(2.4, 0), 0);
-    this.vel.setAll(0);
-    this.camera.snap(new BABYLON.Vector3(this.pos.x, this.pos.y, 0));
+    this.havok.teleport(this.playerBody, new BABYLON.Vector3(2.4, 0.82, 0));
+    this.camera.snap(new BABYLON.Vector3(2.4, 0.9, 0));
+    this.facing = Math.PI / 2; // face +X (right) — the way we explore
   }
 
-  private enterZone(z: ZoneMarker) {
-    this.ui.setZone(z.name);
-  }
-
-  private groundHeight(x: number, z: number): number {
-    let best = 0;
-    const r = 0.35;
-    for (const c of this.world.colliders) {
-      if (x > c.x - c.w / 2 - r && x < c.x + c.w / 2 + r &&
-          z > c.z - c.d / 2 - r && z < c.z + c.d / 2 + r) {
-        best = Math.max(best, c.y + c.h / 2);
-      }
-    }
-    return best;
-  }
-
-  private resolveHorizontal(prevX: number) {
-    const r = 0.32;
-    for (const c of this.world.colliders) {
-      const minY = c.y - c.h / 2, maxY = c.y + c.h / 2;
-      // Standing ON this box (feet at/above its top) → no horizontal push
-      if (this.pos.y >= maxY - 0.12) continue;
-      if (this.pos.y > maxY + 0.05 || this.pos.y + 1.7 < minY) continue;
-      const minX = c.x - c.w / 2, maxX = c.x + c.w / 2;
-      const minZ = c.z - c.d / 2, maxZ = c.z + c.d / 2;
-      if (this.pos.z + r > minZ && this.pos.z - r < maxZ &&
-          this.pos.x + r > minX && this.pos.x - r < maxX) {
-        // Push out along the axis of least penetration
-        const dxL = this.pos.x - (minX - r), dxR = (maxX + r) - this.pos.x;
-        if (dxL < dxR) this.pos.x = minX - r;
-        else this.pos.x = maxX + r;
-        this.vel.x = 0;
-      }
-    }
-    void prevX;
+  /** Downward raycast for ground detection (works with Havok static bodies). */
+  private checkGround(): boolean {
+    const origin = this.playerProxy.position.clone();
+    const ray = new BABYLON.Ray(origin, new BABYLON.Vector3(0, -1, 0), 0.9);
+    const hit = this.scene.pickWithRay(ray, (m) => m.isEnabled() && (m.name === 'platform' || m.name === 'ramp' || m.name === 'turntable' || m.name === 'ground' || m.name === 'protoCube'));
+    return !!(hit && hit.hit && hit.pickedPoint);
   }
 
   private updateController(dt: number) {
     this.input.update(dt);
     const s = this.input.state;
-    const accel = 42, maxSpeed = 5.2, runBoost = this.keys.has('ShiftLeft') ? 1.55 : 1;
 
-    // Horizontal
-    if (Math.abs(s.axisX) > 0.05) {
-      this.vel.x += s.axisX * accel * dt;
-      this.vel.x = BABYLON.Scalar.Clamp(this.vel.x, -maxSpeed * runBoost, maxSpeed * runBoost);
-      this.facing = Math.sign(s.axisX);
-    } else {
-      this.vel.x *= Math.pow(0.0005, dt);
-      if (Math.abs(this.vel.x) < 0.02) this.vel.x = 0;
+    const accel = 46;
+    const maxSpeed = 4.6 * (this.keys.has('ShiftLeft') ? 1.55 : 1);
+    const v = this.havok.getVelocity(this.playerBody);
+
+    // Desired planar velocity from input
+    const desiredX = s.axisX * maxSpeed;
+    const desiredZ = s.axisZ * maxSpeed * 0.6;
+    let nvx = v.x, nvz = v.z;
+    if (Math.abs(s.axisX) > 0.05) nvx += (desiredX - v.x) * Math.min(1, accel * dt / Math.max(maxSpeed, 0.1));
+    else nvx *= Math.pow(0.002, dt);
+    if (Math.abs(s.axisZ) > 0.05) nvz += (desiredZ - v.z) * Math.min(1, accel * dt / Math.max(maxSpeed, 0.1));
+    else nvz *= Math.pow(0.02, dt);
+
+    // NO auto-jump; jump strictly on press with coyote + buffer
+    this.coyote = this.grounded ? 0.12 : Math.max(0, this.coyote - dt);
+    this.jumpBuffer = s.jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
+    let nvy = v.y;
+    if (this.jumpBuffer > 0 && this.coyote > 0) {
+      nvy = 8.4;
+      this.jumpBuffer = 0; this.coyote = 0; this.grounded = false;
     }
 
-    // Depth (W/S) — shallow, for exploring the 3D space
-    if (Math.abs(s.axisZ) > 0.05) {
-      this.vel.z += s.axisZ * 18 * dt;
-      this.vel.z = BABYLON.Scalar.Clamp(this.vel.z, -2.6, 2.6);
-    } else {
-      this.vel.z *= Math.pow(0.02, dt);
-    }
-    this.vel.z = BABYLON.Scalar.Clamp(this.vel.z, -4, 4);
-    this.pos.z = BABYLON.Scalar.Clamp(this.pos.z + this.vel.z * dt, -3.2, 3.2);
+    this.havok.setVelocity(this.playerBody, new BABYLON.Vector3(nvx, nvy, nvz));
 
-    // Jump
-    if (s.jumpPressed && this.grounded) {
-      this.vel.y = 8.2;
-      this.grounded = false;
-    }
+    // Keep within world bounds
+    const p = this.playerProxy.position;
+    if (p.x < -3) { p.x = -3; }
+    if (p.x > 198) { p.x = 198; }
+    if (p.y < -6) { this.havok.teleport(this.playerBody, new BABYLON.Vector3(2.4, 1.0, 0)); }
 
-    // Gravity + integration
-    const prevX = this.pos.x;
-    this.vel.y -= 24 * dt;
-    this.pos.x += this.vel.x * dt;
-    this.pos.y += this.vel.y * dt;
+    // Ground check after physics step
+    this.grounded = this.checkGround() && v.y <= 0.4;
 
-    this.resolveHorizontal(prevX);
+    // Sync visual character to physics capsule (feet at capsule bottom)
+    this.character.setPosition(p.x, p.y - 0.7, p.z);
 
-    const gh = this.groundHeight(this.pos.x, this.pos.z);
-    if (this.pos.y <= gh && this.vel.y <= 0) {
-      if (!this.grounded && this.vel.y < -4) this.character.landingImpact(this.vel.y);
-      this.pos.y = gh;
-      this.vel.y = 0;
-      this.grounded = true;
-    } else {
-      this.grounded = false;
+    // Heading from movement direction (character faces -Z at heading 0)
+    let targetHeading = this.facing;
+    if (Math.abs(s.axisX) > 0.1 || Math.abs(s.axisZ) > 0.1) {
+      targetHeading = Math.atan2(-s.axisX, -s.axisZ);
+      this.facing = targetHeading;
     }
 
-    // Animation state
-    const speed = Math.abs(this.vel.x);
+    // Determine animation + directional variant
+    const planSpeed = Math.hypot(nvx, nvz);
+    const vertical = nvy;
     let state: AnimState;
-    if (!this.grounded) state = this.vel.y > 0.5 ? 'jump' : 'fall';
-    else if (speed > 3.2) state = 'run';
-    else if (speed > 0.35) state = 'walk';
-    else state = 'idle';
-    this.character.setState(state, this.vel.y);
-    this.character.update(dt, speed, this.facing);
-    this.character.setPosition(this.pos.x, this.pos.y, this.pos.z);
+    let dir: MoveDir = 'idle';
+    if (!this.grounded) state = vertical > 0.8 ? 'jump' : 'fall';
+    else if (planSpeed > 0.3) {
+      // Direction relative to heading
+      const facingX = -Math.sin(this.facing), facingZ = -Math.cos(this.facing);
+      const dot = (nvx * facingX + nvz * facingZ) / Math.max(planSpeed, 0.001);
+      if (dot > 0.55) { state = planSpeed > 3.0 ? 'run' : 'walk'; dir = 'forward'; }
+      else if (dot < -0.55) { state = 'walk'; dir = 'back'; }
+      else { state = 'strafe'; dir = nvx > 0 ? 'right' : 'left'; }
+    } else state = 'idle';
+
+    this.character.setState(state, vertical, dir);
+    this.character.update(dt, planSpeed, this.facing);
   }
 
   private frame() {
     const dt = Math.min(this.engine.getDeltaTime() / 1000, 0.05);
+    // Explicit Havok step (kept deterministic & in sync with gameplay)
+    if (this.mode === 'explore') this.scene.getPhysicsEngine()?._step(Math.min(dt, 1 / 30));
     if (this.mode === 'welcome') {
       this.input.update(dt);
-      this.character.setState('idle');
-      this.character.update(dt, 0, 1);
-      // Turntable spin (character rotates with the set)
+      this.character.setState('idle', 0, 'idle');
+      this.character.update(dt, 0, this.turntableAngle);
       if (this.turntableOn) this.turntableAngle += dt * 0.7;
       const tt = this.world.getTurntable();
       if (tt) tt.rotation.y = this.turntableAngle;
       this.character.root.rotation.y = this.turntableAngle;
       this.character.setPosition(0, 0.3, 0);
+      this.camera.update(dt, new BABYLON.Vector3(0, 1.2, 0));
     } else {
       this.updateController(dt);
+      const p = this.playerProxy.position;
+      this.world.update(dt, p.x);
+      this.camera.update(dt, new BABYLON.Vector3(p.x, p.y - 0.4, p.z), this.havok.getVelocity(this.playerBody).x * 0.3);
     }
 
-    this.world.update(dt, this.pos.x);
-    this.camera.update(dt, new BABYLON.Vector3(this.pos.x, this.pos.y, this.pos.z), this.vel.x * 0.35);
-
-    // FPS
     this.fpsAcc += dt; this.fpsFrames++;
     if (this.fpsAcc >= 0.5) {
       this.ui.setFps(Math.round(this.fpsFrames / this.fpsAcc));
