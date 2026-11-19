@@ -206,15 +206,20 @@ class App {
         minZ = Math.min(minZ, world[i + 2]); maxZ = Math.max(maxZ, world[i + 2]);
       }
       const LEN = 8;                       // exact modular length along X
+      const ROAD_Y = 0.12;                 // lift above the ground to avoid z-fighting
       const longZ = (maxZ - minZ) >= (maxX - minX);
       const span = longZ ? maxZ - minZ : maxX - minX;
       const s = LEN / span;
       const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
       const baked: number[] = [];
+      let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
       for (let i = 0; i < world.length; i += 3) {
         let x = world[i] - cx, z = world[i + 2] - cz;
         if (longZ) { const t = x; x = z; z = -t; } // align long axis with world X
-        baked.push(x * s, (world[i + 1] - maxY) * s, z * s); // top flush with ground
+        x *= s; z *= s;
+        bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x);
+        bz0 = Math.min(bz0, z); bz1 = Math.max(bz1, z);
+        baked.push(x, (world[i + 1] - maxY) * s + ROAD_Y, z);
       }
       const normals: number[] = [];
       BABYLON.VertexData.ComputeNormals(baked, idx, normals);
@@ -226,11 +231,22 @@ class App {
       seg.material = src.material;
       seg.setEnabled(false);
       const START = 52; // after the ramp + platform
+      const roadW = bx1 - bx0, roadD = bz1 - bz0;
+      const roadCX = (bx0 + bx1) / 2, roadCZ = (bz0 + bz1) / 2;
       for (let i = 0; i < 5; i++) {
         const road = seg.createInstance(`road${i}`);
         road.position.set(START + i * LEN, 0, 0);
         road.isPickable = false;
         road.receiveShadows = true;
+        // Collision slab whose top matches the visible road surface exactly.
+        this.world.colliders.push({
+          x: START + i * LEN + roadCX,
+          y: ROAD_Y / 2,
+          z: roadCZ,
+          w: roadW,
+          h: ROAD_Y,
+          d: roadD,
+        });
       }
     } catch (e) {
       console.warn('[Road] modular road failed to load:', e);
