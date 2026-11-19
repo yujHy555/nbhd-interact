@@ -446,23 +446,21 @@ export class Character {
   /** Surface height sampler supplied by the game (foot XZ → ground Y). */
   public groundSampler: ((x: number, z: number) => number) | null = null;
 
-  /** IK-style foot pinning. Runs AFTER the animation each frame so the Mixamo
-   *  clip can't overwrite it. For each foot we sample the real ground beneath
-   *  it, then (a) rotate the foot bone to match the slope and (b) nudge the
-   *  root so the lowest sole never sinks below that surface. The body itself
-   *  stays upright — no whole-rig tilt, so no "falling forward" look. */
+  /** AAA foot IK — deterministic and jitter-free.
+   *  Runs AFTER the Mixamo clip. On a slope we (a) pitch each foot bone to the
+   *  ground angle and (b) apply ONE smoothed, geometry-derived lift computed
+   *  from the actual sole penetration. The lift uses a smoothed error signal
+   *  (not a per-frame snap), so it cannot fight the root and cause bob. The
+   *  controller owns the root; IK only supplements it on real slopes. */
+  private footLift = 0;
+
   public applyFootIK(dt: number) {
     if (!this.mixamo || !this.groundSampler) return;
-    // Smooth the slope so stepping onto/off the ramp never snaps or jitters.
     this.smoothSlope += (this.targetSlope - this.smoothSlope) * Math.min(1, dt * 8);
     const slope = this.smoothSlope;
-    const upright = Math.abs(slope) < 0.01;
+    const onSlope = Math.abs(slope) > 0.02;
 
-    // Foot pitch about the lateral axis. When facing +X (heading π/2) the
-    // lateral axis is world Z; a ramp rising along +X needs a +Z rotation.
-    const pitchQ = upright ? null : BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Z, slope);
-
-    let lowestSole = Infinity;
+    let minSoleErr = Infinity;
     for (const mesh of this.mixamo.root.getChildMeshes(false)) {
       const sk = (mesh as BABYLON.Mesh).skeleton;
       if (!sk) continue;
@@ -471,33 +469,25 @@ export class Character {
       for (const name of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
         const bone = sk.bones.find((b) => b.name === name);
         if (!bone) continue;
-        // Match the foot's rotation to the slope (world-space pitch applied
-        // after the clip, in the bone's parent space so it is stable).
-        if (pitchQ && bone.rotationQuaternion) {
+        if (onSlope && bone.rotationQuaternion) {
+          const pitch = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Z, slope);
           const parent = bone.getParent();
           const pq = parent ? BABYLON.Quaternion.FromRotationMatrix(parent.getAbsoluteMatrix()) : BABYLON.Quaternion.Identity();
-          const localPitch = BABYLON.Quaternion.Inverse(pq).multiply(pitchQ).multiply(pq);
-          bone.rotationQuaternion = localPitch.multiply(bone.rotationQuaternion);
+          bone.rotationQuaternion = BABYLON.Quaternion.Inverse(pq).multiply(pitch).multiply(pq).multiply(bone.rotationQuaternion);
         }
-        // Recompute after the pitch adjustment and measure the sole height.
         sk.computeAbsoluteMatrices();
         const wp = BABYLON.Vector3.TransformCoordinates(bone.getAbsolutePosition(), mesh.getWorldMatrix());
         const ground = this.groundSampler(wp.x, wp.z);
-        const sole = wp.y - this.footOffset;
-        lowestSole = Math.min(lowestSole, sole - ground);
+        minSoleErr = Math.min(minSoleErr, (wp.y - this.footOffset) - ground);
       }
     }
-    // Pin the lowest sole to ~1.5 cm above the sampled surface. Correct the
-    // full error immediately (true IK constraint) so the shoe never sinks,
-    // even mid-stride. The controller resets the root each frame, so there is
-    // no accumulation — and on flat ground the error is tiny → no jitter.
-    // Only apply the hard constraint on non-flat ground. On flat ground the
-    // Mixamo clip is already authored with the feet on the floor; pinning the
-    // lowest foot there fights the natural bob and causes run jitter.
-    if (isFinite(lowestSole) && Math.abs(this.smoothSlope) > 0.02) {
-      const err = 0.015 - lowestSole;
-      this.root.position.y += Math.max(-0.25, Math.min(0.25, err));
-    }
+
+    // Smoothly drive the extra lift toward the needed correction. A damped
+    // follow (not an instant snap) keeps the body perfectly smooth while the
+    // shoes settle onto the incline within a few frames.
+    const target = onSlope && isFinite(minSoleErr) ? Math.max(0, 0.02 - minSoleErr) : 0;
+    this.footLift += (target - this.footLift) * Math.min(1, dt * 14);
+    this.root.position.y += this.footLift;
   }
 
   /** Set the flip rotation about the waist (radians). */

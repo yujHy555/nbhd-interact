@@ -116,6 +116,9 @@ class App {
     this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
       if (ok) {
         this.character.bindMixamo(this.mixamo);
+        // Bind the newly-loaded hero to the drone scan overlay (if present).
+        const hero = this.mixamo.root.getChildMeshes(false).find((m) => m instanceof BABYLON.Mesh) as BABYLON.Mesh | undefined;
+        if (hero && this.drone) this.drone.bindTarget(hero);
         for (const m of this.mixamo.root.getChildMeshes(false)) {
           if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
         }
@@ -321,6 +324,8 @@ class App {
   private createDrone() {
     this.drone?.dispose();
     this.drone = new Drone(this.scene, () => this.audio.zone());
+    const hero = this.mixamo.root.getChildMeshes(false).find((m) => m instanceof BABYLON.Mesh) as BABYLON.Mesh | undefined;
+    if (hero) this.drone.bindTarget(hero);
   }
 
   private startExploring() {

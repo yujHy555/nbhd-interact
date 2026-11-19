@@ -175,7 +175,7 @@ export class World {
     // Road section occupies x=52..92 — no platforms on or with the road.
 
     // ---- Travelator (conveyor) section x=94..108 — after the road ----
-    this.addTravelator(101, 0, 14, 5, 3.2);
+    this.addTravelator(101, 0, 14, 5, 4.6); // slightly faster than a walk (3.0)
 
     // ---- What We Do zone (78..150): content cubes + platforms ----
     // Keep x=52..92 clear for the modular road.

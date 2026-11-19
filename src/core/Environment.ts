@@ -61,17 +61,16 @@ export class Environment {
     this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
     this.shadowGen.useBlurExponentialShadowMap = true;
     this.shadowGen.blurKernel = 16;
-    this.shadowGen.darkness = 0.08; // deep, clearly visible shadows
-    this.shadowGen.bias = 0.0005;
-    this.shadowGen.normalBias = 0.01;
-    // Tight, fixed-size shadow volume around the player — follows the camera
-    // focus each frame (see focusSun). autoUpdateExtends with a level-long
-    // caster list made the map so coarse that contact shadows vanished.
+    this.shadowGen.setDarkness(0.35);
+    this.shadowGen.bias = 0.0008;
+    this.shadowGen.normalBias = 0.015;
+    // Tight shadow volume around the player. Auto-fitting a level-long caster
+    // list made the map so coarse that the hero's contact shadow vanished.
     this.sun.autoUpdateExtends = false;
-    this.sun.orthoLeft = -26; this.sun.orthoRight = 26;
-    this.sun.orthoTop = 26; this.sun.orthoBottom = -26;
+    this.sun.orthoLeft = -22; this.sun.orthoRight = 22;
+    this.sun.orthoTop = 22; this.sun.orthoBottom = -22;
     this.sun.shadowMinZ = 1;
-    this.sun.shadowMaxZ = 160;
+    this.sun.shadowMaxZ = 120;
 
     // ---- Fill light ----
     this.hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);

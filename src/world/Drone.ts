@@ -36,21 +36,69 @@ varying vec3 vPosW;
 uniform float time;
 uniform float strength;
 uniform vec3 beamColor;
+uniform vec3 playerPos;
+uniform float scanSpeed;
 void main(void) {
-  // Vertical scan bands that travel down the cone
-  float bands = sin(vUV.y * 46.0 - time * 9.0) * 0.5 + 0.5;
-  bands = pow(bands, 3.0);
-  // Fine moving scanlines
-  float lines = sin(vUV.x * 80.0 + time * 4.0) * 0.5 + 0.5;
-  // Fresnel edge glow makes the cone silhouette pop
+  // Downward-travelling scan bands
+  float bands = sin(vUV.y * 38.0 - time * scanSpeed) * 0.5 + 0.5;
+  bands = pow(bands, 4.0);
+  // World-space emission grid projected down the beam (sci-fi volumetric map)
+  vec2 gridUV = vPosW.xz * 2.2;
+  vec2 g = abs(fract(gridUV) - 0.5);
+  float grid = smoothstep(0.44, 0.5, max(g.x, g.y));
+  // Fine high-frequency scanlines
+  float lines = sin(vUV.y * 160.0 - time * 22.0) * 0.5 + 0.5;
+  // Sweeping scan disc that travels down the beam onto the player
+  float sweepY = fract(time * 0.35);
+  float sweep = exp(-pow((vUV.y - sweepY) * 9.0, 2.0));
+  // Fresnel edge glow
   vec3 viewDir = normalize(cameraPosition - vPosW);
-  float fres = pow(1.0 - abs(dot(normalize(vNormalW), viewDir)), 2.2);
-  // Fade toward the base so it melts into the floor
-  float fade = smoothstep(0.0, 0.28, vUV.y) * (1.0 - smoothstep(0.86, 1.0, vUV.y));
-  float pulse = 0.78 + 0.22 * sin(time * 6.0);
-  float a = (0.14 + bands * 0.42 + fres * 0.55 + lines * 0.08) * fade * strength * pulse;
-  vec3 c = beamColor * (0.75 + bands * 0.9 + fres * 1.5);
+  float fres = pow(1.0 - abs(dot(normalize(vNormalW), viewDir)), 2.0);
+  // Bright focus hotspot where the beam meets the player's body
+  float dxz = length(vPosW.xz - playerPos.xz);
+  float focus = exp(-dxz * dxz * 3.0) * (1.0 - vUV.y);
+  // Vertical fade so it melts into the floor
+  float fade = smoothstep(0.0, 0.18, vUV.y) * (1.0 - smoothstep(0.9, 1.0, vUV.y));
+  float pulse = 0.82 + 0.18 * sin(time * 8.0);
+  float a = (0.10 + bands * 0.35 + grid * 0.30 + lines * 0.05 + fres * 0.5 + sweep * 0.5 + focus * 0.6) * fade * strength * pulse;
+  vec3 c = beamColor * (0.7 + bands * 0.8 + grid * 1.4 + fres * 1.2 + sweep * 1.6 + focus * 2.0);
   gl_FragColor = vec4(c, clamp(a, 0.0, 1.0));
+}`;
+
+// ---- Emission grid projected onto the player's body ------------------------
+BABYLON.Effect.ShadersStore['droneBodyGridVertexShader'] = `
+precision highp float;
+attribute vec3 position;
+attribute vec3 normal;
+uniform mat4 worldViewProjection;
+uniform mat4 world;
+varying vec3 vPosW;
+varying vec3 vNormalW;
+void main(void) {
+  vPosW = (world * vec4(position, 1.0)).xyz;
+  vNormalW = normalize(vec3(world * vec4(normal, 0.0)));
+  gl_Position = worldViewProjection * vec4(position, 1.0);
+}`;
+
+BABYLON.Effect.ShadersStore['droneBodyGridFragmentShader'] = `
+precision highp float;
+varying vec3 vPosW;
+varying vec3 vNormalW;
+uniform float time;
+uniform float strength;
+uniform vec3 beamColor;
+void main(void) {
+  // World-space emission grid mapped onto the character's silhouette
+  vec2 g = abs(fract(vPosW.xz * 3.0) - 0.5);
+  float gridX = smoothstep(0.46, 0.5, g.x);
+  float gridY = smoothstep(0.46, 0.5, abs(fract(vPosW.y * 3.0) - 0.5));
+  float grid = max(gridX, gridY);
+  // Horizontal scanner sweeping up the body
+  float sweep = exp(-pow((fract(vPosW.y * 0.5 - time * 0.4) - 0.5) * 12.0, 2.0));
+  float fres = pow(1.0 - abs(dot(normalize(vNormalW), normalize(cameraPosition - vPosW))), 2.0);
+  float pulse = 0.8 + 0.2 * sin(time * 9.0);
+  float a = (grid * 0.55 + sweep * 0.7 + fres * 0.25) * strength * pulse;
+  gl_FragColor = vec4(beamColor * (grid * 1.5 + sweep * 2.2 + 0.4), clamp(a, 0.0, 0.85));
 }`;
 
 type Phase = 'dormant' | 'arrive' | 'hover' | 'scan' | 'depart' | 'done';
@@ -70,6 +118,9 @@ export class Drone {
   private ringMat!: BABYLON.StandardMaterial;
   private halo!: BABYLON.Mesh;
   private haloMat!: BABYLON.StandardMaterial;
+  private bodyGrid!: BABYLON.Mesh;      // emission grid wrapped on the player
+  private bodyGridMat!: BABYLON.ShaderMaterial;
+  private scanLight!: BABYLON.SpotLight; // real light shining onto the player
   private glow: BABYLON.GlowLayer;
   private phase: Phase = 'dormant';
   private phaseT = 0;
@@ -181,6 +232,14 @@ export class Drone {
       this.cpuLeds.push({ mesh: led, mat, phase: i * 2.1, freq: 9 + i * 1.7, hex });
     }
 
+    // Real spot light — the beam shines directly onto the player (AAA lighting)
+    this.scanLight = new BABYLON.SpotLight('droneScanLight', new BABYLON.Vector3(0, -0.2, 0), new BABYLON.Vector3(0, -1, 0), 0.5, 4, this.scene);
+    this.scanLight.diffuse = BABYLON.Color3.FromHexString('#ff2a3a');
+    this.scanLight.specular = BABYLON.Color3.FromHexString('#ff5566');
+    this.scanLight.intensity = 0;
+    this.scanLight.range = 12;
+    this.scanLight.parent = this.root;
+
     // Red eye light + cyan rotor light (Blobothan drone signature)
     const eyeLight = new BABYLON.PointLight('droneEyeLight', new BABYLON.Vector3(0, 0.18, 0.42), this.scene);
     eyeLight.diffuse = BABYLON.Color3.FromHexString('#ff2a3a');
@@ -205,12 +264,14 @@ export class Drone {
       { vertex: 'droneScan', fragment: 'droneScan' },
       {
         attributes: ['position', 'normal', 'uv'],
-        uniforms: ['worldViewProjection', 'world', 'time', 'strength', 'beamColor', 'cameraPosition'],
+        uniforms: ['worldViewProjection', 'world', 'time', 'strength', 'beamColor', 'cameraPosition', 'playerPos', 'scanSpeed'],
         needAlphaBlending: true,
       });
     this.scanMat.setColor3('beamColor', new BABYLON.Color3(1.0, 0.09, 0.14));
     this.scanMat.setFloat('strength', 0);
     this.scanMat.setFloat('time', 0);
+    this.scanMat.setFloat('scanSpeed', 12);
+    this.scanMat.setVector3('playerPos', BABYLON.Vector3.Zero());
     this.scanMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
     this.scanMat.backFaceCulling = false;
     this.scanMat.disableDepthWrite = true;
@@ -237,6 +298,30 @@ export class Drone {
     this.halo.position.y = -0.3;
     this.halo.isPickable = false;
     this.halo.setEnabled(false);
+  }
+
+  /** Bind the hero mesh so the scan can project an emission grid onto it. */
+  public bindTarget(hero: BABYLON.Mesh) {
+    if (this.bodyGrid) return;
+    this.bodyGridMat = new BABYLON.ShaderMaterial('droneBodyGridMat', this.scene,
+      { vertex: 'droneBodyGrid', fragment: 'droneBodyGrid' },
+      {
+        attributes: ['position', 'normal'],
+        uniforms: ['worldViewProjection', 'world', 'time', 'strength', 'beamColor', 'cameraPosition'],
+        needAlphaBlending: true,
+      });
+    this.bodyGridMat.setColor3('beamColor', new BABYLON.Color3(1.0, 0.15, 0.2));
+    this.bodyGridMat.setFloat('strength', 0);
+    this.bodyGridMat.setFloat('time', 0);
+    this.bodyGridMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+    this.bodyGridMat.backFaceCulling = false;
+    this.bodyGridMat.disableDepthWrite = true;
+    // Copy geometry+skin from the hero so the overlay follows the animation.
+    this.bodyGrid = hero.clone('droneBodyGrid');
+    this.bodyGrid.material = this.bodyGridMat;
+    this.bodyGrid.isPickable = false;
+    this.bodyGrid.renderingGroupId = 1;
+    this.bodyGrid.setEnabled(false);
   }
 
   public get active() { return this.phase !== 'dormant' && this.phase !== 'done'; }
@@ -274,6 +359,8 @@ export class Drone {
       l.mat.emissiveColor = BABYLON.Color3.FromHexString(l.hex).scale(0.3 + blink * 0.9);
     }
     this.scanMat.setFloat('time', this.time);
+    this.scanMat.setVector3('playerPos', player);
+    if (this.bodyGridMat) this.bodyGridMat.setFloat('time', this.time);
 
     const ease = (t: number) => t * t * (3 - 2 * t);
 
@@ -307,30 +394,44 @@ export class Drone {
       this.root.position.z += (player.z + 0.9 - this.root.position.z) * Math.min(1, dt * 2.4);
       this.root.rotation.z = Math.sin(this.time * 3) * 0.03;
 
-      const T = 5.0;
+      const T = 6.0;
       const t = Math.min(1, this.phaseT / T);
       // Grow 0→1, hold, retract 1→0
       let beam = 1;
-      if (t < 0.22) beam = ease(t / 0.22);
-      else if (t > 0.78) beam = 1 - ease((t - 0.78) / 0.22);
-      const h = Math.max(0.05, this.root.position.y - 0.1);
+      if (t < 0.18) beam = ease(t / 0.18);
+      else if (t > 0.8) beam = 1 - ease((t - 0.8) / 0.2);
+      const h = Math.max(0.05, this.root.position.y - player.y);
       this.cone.scaling.set(1, h, 1);
       this.cone.position.y = -h / 2;
       this.cone.position.x = player.x - this.root.position.x;
       this.cone.position.z = player.z - this.root.position.z;
       this.scanMat.setFloat('strength', beam);
-      this.haloMat.alpha = 0.55 * beam;
+      this.scanMat.setFloat('scanSpeed', 10 + Math.sin(this.time * 2) * 4);
+      this.haloMat.alpha = 0.7 * beam;
 
-      // Ground ring expands + pulses in sync
-      const rp = (this.phaseT % 1.1) / 1.1;
+      // Real spot light — aim precisely at the player's chest
+      const chest = new BABYLON.Vector3(player.x, player.y + 1.0, player.z);
+      this.scanLight.intensity = 3.5 * beam;
+      this.scanLight.direction = chest.subtract(this.root.position).normalize();
+
+      // Emission grid projected onto the player's body
+      if (this.bodyGrid) {
+        this.bodyGrid.setEnabled(beam > 0.02);
+        if (this.bodyGridMat) this.bodyGridMat.setFloat('strength', beam);
+      }
+
+      // Ground ring + secondary rings expanding under the target
+      const rp = (this.phaseT % 1.0) / 1.0;
       this.ring.position.set(player.x, player.y + 0.04, player.z);
-      this.ring.scaling.setAll((0.6 + rp * 1.6) * beam);
-      this.ringMat.alpha = (1 - rp) * 0.9 * beam;
+      this.ring.scaling.setAll((0.5 + rp * 2.2) * beam);
+      this.ringMat.alpha = (1 - rp) * beam;
 
       if (t >= 1) {
         this.cone.setEnabled(false);
         this.ring.setEnabled(false);
         this.halo.setEnabled(false);
+        this.scanLight.intensity = 0;
+        if (this.bodyGrid) this.bodyGrid.setEnabled(false);
         this.phase = 'depart'; this.phaseT = 0;
         this.departPos = this.root.position.clone();
         this.onCue?.();
@@ -363,5 +464,7 @@ export class Drone {
     this.haloMat.dispose();
     this.ledMat.dispose();
     this.coreMat.dispose();
+    this.bodyGrid?.dispose();
+    this.bodyGridMat?.dispose();
   }
 }
