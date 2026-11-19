@@ -58,6 +58,10 @@ export class SciFiCity {
       }
     }
 
+    // Collect all baked vertex positions (local space, base at y=0) so we can
+    // sample the true roof height at any XZ cell of the footprint.
+    const bakedPoints: { x: number; y: number; z: number }[] = [];
+
     // Bake each sub-mesh into local space centred on the building, base at y=0.
     for (const m of meshes) {
       const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind)!;
@@ -69,7 +73,9 @@ export class SciFiCity {
       const v = new BABYLON.Vector3(), nv = new BABYLON.Vector3();
       for (let i = 0; i < pos.length; i += 3) {
         BABYLON.Vector3.TransformCoordinatesToRef(new BABYLON.Vector3(pos[i], pos[i + 1], pos[i + 2]), wm, v);
-        baked.push(v.x - cx, v.y - minY, v.z - cz);
+        const lx = v.x - cx, ly = v.y - minY, lz = v.z - cz;
+        bakedPoints.push({ x: lx, y: ly, z: lz });
+        baked.push(lx, ly, lz);
         if (uv) uvs.push(uv[(i / 3) * 2], uv[(i / 3) * 2 + 1]);
         if (nor) { BABYLON.Vector3.TransformNormalToRef(new BABYLON.Vector3(nor[i], nor[i + 1], nor[i + 2]), wm, nv); norms.push(nv.x, nv.y, nv.z); }
       }
@@ -116,13 +122,43 @@ export class SciFiCity {
         inst.isPickable = false;
         inst.receiveShadows = true;
       }
-      // Collider top = the REAL dominant roof surface (not the bbox top with
-      // its tiny antenna details), so the player's feet land exactly on it.
-      const roofH = roofLocal * s.s;
-      onCollider({
-        x: s.x, y: roofH / 2, z: s.z,
-        w: W * s.s * 0.9, h: roofH, d: D * s.s * 0.9,
-      });
+      // Colliders for ALL roof sections — a heightfield grid over the whole
+      // footprint. Each cell samples the dominant surface height from the real
+      // geometry at that XZ, so every terrace/section of the building is
+      // landable at its own height (not one flat bbox slab).
+      const N = 6; // 6x6 cells per building
+      const cellW = (W * s.s) / N;
+      const cellD = (D * s.s) / N;
+      const halfW = (W * s.s) / 2, halfD = (D * s.s) / 2;
+      for (let gx = 0; gx < N; gx++) {
+        for (let gz = 0; gz < N; gz++) {
+          // cell centre in local (unscaled) building space
+          const lcx = -halfW / s.s + ((gx + 0.5) / N) * W;
+          const lcz = -halfD / s.s + ((gz + 0.5) / N) * D;
+          // Histogram vertex heights within this local XZ cell; take the
+          // highest well-populated band (the walkable surface of that section).
+          const hist = new Map<number, number>();
+          const rad = Math.max(W, D) / N * 0.75 + 0.2;
+          for (const pt of bakedPoints) {
+            if (Math.abs(pt.x - lcx) > rad || Math.abs(pt.z - lcz) > rad) continue;
+            if (pt.y < minY + H * 0.35) continue; // focus on upper surfaces
+            const band = Math.round(pt.y * 5) / 5; // 0.2 m bands
+            hist.set(band, (hist.get(band) || 0) + 1);
+          }
+          if (!hist.size) continue;
+          let bestH = roofLocal, bestCount = -1;
+          for (const [band, count] of hist) {
+            if (count > bestCount) { bestCount = count; bestH = band; }
+          }
+          const top = bestH * s.s;
+          const worldX = s.x - halfW + (gx + 0.5) * cellW;
+          const worldZ = s.z - halfD + (gz + 0.5) * cellD;
+          onCollider({
+            x: worldX, y: top / 2, z: worldZ,
+            w: cellW * 1.02, h: top, d: cellD * 1.02,
+          });
+        }
+      }
     }
   }
 
