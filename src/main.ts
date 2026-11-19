@@ -166,6 +166,14 @@ class App {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
       if (e.code === 'Backquote') { this.debug = !this.debug; this.toggleDebug(); }
+      if (e.code === 'KeyF' && !e.repeat) {
+        // F toggles fullscreen (browser requires a user gesture — keydown is one).
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen?.().catch(() => {});
+        } else {
+          document.exitFullscreen?.().catch(() => {});
+        }
+      }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
 
