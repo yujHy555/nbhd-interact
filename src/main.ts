@@ -13,6 +13,7 @@ import { World, Pickup, ZoneMarker, SlopeCollider } from './world/World';
 import { UI } from './ui/UI';
 import { Minimap } from './ui/Minimap';
 import { Drone } from './world/Drone';
+import { PixelPortal } from './world/PixelPortal';
 
 type Mode = 'welcome' | 'explore';
 
@@ -33,6 +34,7 @@ class App {
   private ui!: UI;
   private minimap!: Minimap;
   private drone!: Drone;
+  private pixelPortal!: PixelPortal;
   private exploreTime = 0;
   private droneTriggered = false;
   private mode: Mode = 'welcome';
@@ -120,7 +122,17 @@ class App {
         const hero = this.mixamo.root.getChildMeshes(false).find((m) => m instanceof BABYLON.Mesh) as BABYLON.Mesh | undefined;
         if (hero && this.drone) this.drone.bindTarget(hero);
         for (const m of this.mixamo.root.getChildMeshes(false)) {
-          if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
+          if (m instanceof BABYLON.Mesh) {
+            this.env.registerShadowCaster(m);
+            // Matte hero — no glossy/specular look.
+            const mat = m.material as BABYLON.PBRMaterial;
+            if (mat && mat.metallic !== undefined) {
+              mat.metallic = 0;
+              mat.roughness = 1;
+              if (mat.metallicTexture) mat.metallicTexture = null;
+              if (mat.microSurfaceTexture) mat.microSurfaceTexture = null;
+            }
+          }
         }
       } else {
         // Only reveal the procedural fallback if the real model truly fails.
@@ -142,6 +154,11 @@ class App {
     arc.upperRadiusLimit = 26;
     arc.panningSensibility = 0;
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
+
+    // Pixel-art portal placed after the road section
+    this.pixelPortal = new PixelPortal(this.scene, this.camera.getCamera(), (pixel) => {
+      this.ui.setZone(pixel ? 'PIXEL WORLD' : 'NEIGHBOURHOOD');
+    });
 
     // Cinematic scan drone — one-shot encounter 30 s into the level
     this.createDrone();
@@ -575,6 +592,7 @@ class App {
       }
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
+    this.pixelPortal.update(dt, pp);
     this.env.focusSun(pp);
     this.drone.update(dt, pp);
     this.polish.update(dt, pp, pp.y, this.mode === 'explore' && this.pvel.length() > 0.5);

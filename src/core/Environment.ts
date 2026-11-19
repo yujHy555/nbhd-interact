@@ -60,8 +60,9 @@ export class Environment {
     this.sun.specular = new BABYLON.Color3(1, 0.98, 0.92);
     this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
     this.shadowGen.useBlurExponentialShadowMap = true;
-    this.shadowGen.blurKernel = 16;
-    this.shadowGen.setDarkness(0.35);
+    this.shadowGen.blurKernel = 20;       // soft, feathered edges
+    this.shadowGen.setDarkness(0.04);     // dramatic, unmistakable shadows
+    this.shadowGen.depthScale = 220;      // crisp ESM contact definition
     this.shadowGen.bias = 0.0008;
     this.shadowGen.normalBias = 0.015;
     // Tight shadow volume around the player. Auto-fitting a level-long caster
@@ -74,12 +75,12 @@ export class Environment {
 
     // ---- Fill light ----
     this.hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-    this.hemi.intensity = 0.55; // balanced fill — scene stays bright
+    this.hemi.intensity = 0.42; // moderate fill — strong shadow contrast
     this.hemi.diffuse = new BABYLON.Color3(0.65, 0.78, 0.95);
     this.hemi.groundColor = new BABYLON.Color3(0.18, 0.16, 0.14);
 
     // ---- Ground (real-world metric scale) ----
-    this.ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 400, height: 80 }, scene);
+    this.ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 640, height: 110 }, scene);
     const groundMat = new BABYLON.PBRMaterial('groundMat', scene);
     groundMat.albedoColor = new BABYLON.Color3(0.56, 0.58, 0.62); // lighter grey
     groundMat.metallic = 0.05;
@@ -98,14 +99,14 @@ export class Environment {
     gridTex.update();
     gridTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
     gridTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-    gridTex.uScale = 400; // 400 m wide → 400 one-metre tiles across X
-    gridTex.vScale = 80;  // 80 m deep  → 80 one-metre tiles across Z
+    gridTex.uScale = 640; // 640 m wide → 640 one-metre tiles across X
+    gridTex.vScale = 110; // 110 m deep → 110 one-metre tiles across Z
     groundMat.albedoTexture = gridTex;
     groundMat.albedoColor = new BABYLON.Color3(1, 1, 1);
 
     this.ground.material = groundMat;
     this.ground.receiveShadows = true;
-    this.ground.position.x = 90; // centre of the horizontal world
+    this.ground.position.x = 150; // centre of the enlarged horizontal world
 
     // Start area kept clean — no calibration chart or material test balls.
   }

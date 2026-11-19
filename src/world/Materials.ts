@@ -14,8 +14,8 @@ export class Materials {
     const m = new BABYLON.StandardMaterial(name, this.scene);
     const c = new BABYLON.Color3(rgb[0], rgb[1], rgb[2]);
     m.diffuseColor = c;
-    m.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
-    m.emissiveColor = c.scale(0.3); // accent, not a flat fill
+    m.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+    m.emissiveColor = c.scale(0.12); // subtle accent — keeps shadows readable
     m.disableLighting = false;      // lighting ENABLED → real shading
     m.alpha = alpha;
     this.cache.set(key, m);

@@ -322,10 +322,12 @@ export class Character {
     if (this.mixamo) {
       // Foot-lock: playback rate tracks real ground speed so the feet do not
       // slide across the floor. A backwards move reverses the same cycle.
+      // Mixamo clips are authored at their own pace. Match playback so the
+      // planted foot's ground speed ≈ the character's travel speed (no slide).
       let nominal = 1;
-      if (this.state === 'run') nominal = 6.2;
-      else if (this.state === 'walk' || this.state === 'strafe') nominal = 3.0;
-      const ratio = nominal > 1 ? Math.min(1.6, Math.max(0.35, speed / nominal)) : 1;
+      if (this.state === 'run') nominal = 4.2;
+      else if (this.state === 'walk' || this.state === 'strafe') nominal = 2.0;
+      const ratio = nominal > 1 ? Math.min(2.2, Math.max(0.4, speed / nominal)) : 1;
       this.mixamo.setCurrentSpeed(this.dir === 'back' ? -ratio : ratio);
       this.updateSecondaryOnly(dt);
       return;

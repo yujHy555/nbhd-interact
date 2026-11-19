@@ -175,7 +175,7 @@ export class World {
     // Road section occupies x=52..92 — no platforms on or with the road.
 
     // ---- Travelator (conveyor) section x=94..108 — after the road ----
-    this.addTravelator(101, 0, 14, 5, 4.6); // slightly faster than a walk (3.0)
+    this.addTravelator(101, 0, 14, 5, 7.5); // fast conveyor — clearly carries the player
 
     // ---- What We Do zone (78..150): content cubes + platforms ----
     // Keep x=52..92 clear for the modular road.
@@ -188,6 +188,15 @@ export class World {
     this.addPlatform(158, 2.2, 0, 6, 1, 5, [0.95, 0.4, 0.75]);
     this.addPlatform(170, 1.6, 0, 6, 1, 5, [0.95, 0.4, 0.75]);
     this.addPlatform(182, 1.0, 0, 8, 1, 5, [0.95, 0.4, 0.75]);
+
+    // ---- Extended world (212..320): bigger map ----
+    this.addPlatform(214, 1.2, 0, 6, 1, 5, [0.4, 0.95, 0.7]);
+    this.addPlatform(226, 2.0, 0, 6, 1, 5, [0.4, 0.95, 0.7]);
+    this.addPlatform(240, 2.8, 0, 7, 1, 5, [0.4, 0.95, 0.7]);
+    this.addPlatform(256, 2.0, 0, 6, 1, 5, [0.6, 0.5, 0.95]);
+    this.addPlatform(270, 1.4, 0, 6, 1, 5, [0.6, 0.5, 0.95]);
+    this.addPlatform(286, 2.2, 0, 7, 1, 5, [0.6, 0.5, 0.95]);
+    this.addPlatform(302, 1.6, 0, 8, 1, 5, [0.95, 0.7, 0.3]);
 
     // Prototype cubes scattered along the route
     for (let i = 0; i < 12; i++) {
