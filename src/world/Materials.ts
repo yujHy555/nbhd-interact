@@ -19,13 +19,14 @@ export class Materials {
     return m;
   }
 
+  /** Classic Lambert-style material for all platforms / surfaces. */
   concrete(name: string) {
     const key = `concrete-${name}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
-    const m = new BABYLON.PBRMaterial(name, this.scene);
-    m.albedoColor = new BABYLON.Color3(0.28, 0.32, 0.38);
-    m.metallic = 0.08; m.roughness = 0.78;
-    m.environmentIntensity = 0.75;
+    const m = new BABYLON.StandardMaterial(name, this.scene);
+    m.diffuseColor = new BABYLON.Color3(0.32, 0.36, 0.42);
+    m.specularColor = new BABYLON.Color3(0.08, 0.09, 0.1);
+    m.emissiveColor = new BABYLON.Color3(0.02, 0.025, 0.03);
     this.cache.set(key, m);
     return m;
   }

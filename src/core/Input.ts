@@ -9,6 +9,8 @@ export interface InputState {
   jumpPressed: boolean;
   axisX: number;
   axisZ: number;
+  cameraX: number;  // left stick → camera orbit
+  cameraZ: number;
   anyInput: boolean;
 }
 
@@ -16,7 +18,7 @@ export interface InputState {
 export class Input {
   public state: InputState = {
     left: false, right: false, forward: false, back: false,
-    jump: false, jumpPressed: false, axisX: 0, axisZ: 0, anyInput: false,
+    jump: false, jumpPressed: false, axisX: 0, axisZ: 0, cameraX: 0, cameraZ: 0, anyInput: false,
   };
   private keys = new Set<string>();
   private justPressed = new Set<string>();
@@ -66,9 +68,15 @@ export class Input {
       const gp = gps && gps.length ? Array.from(gps).find(g => g && g.connected) as Gamepad | null : null;
       if (gp) {
         const dz = 0.18;
+        // Left stick = CAMERA ORBIT (per spec)
         const lx = gp.axes[0] ?? 0, ly = gp.axes[1] ?? 0;
-        if (Math.abs(lx) > dz) ax = Math.sign(lx) * ((Math.abs(lx) - dz) / (1 - dz));
-        if (Math.abs(ly) > dz) az = -Math.sign(ly) * ((Math.abs(ly) - dz) / (1 - dz));
+        const dzl = (v: number) => Math.abs(v) > dz ? Math.sign(v) * ((Math.abs(v) - dz) / (1 - dz)) : 0;
+        this.state.cameraX = dzl(lx);
+        this.state.cameraZ = dzl(ly);
+        // Right stick = character movement
+        const rx = gp.axes[2] ?? 0, ry = gp.axes[3] ?? 0;
+        if (Math.abs(rx) > dz) ax = dzl(rx);
+        if (Math.abs(ry) > dz) az = -dzl(ry);
         const btn = (i: number) => !!(gp.buttons[i] && gp.buttons[i]!.pressed);
         const jp = btn(0);
         if (jp) { jumpHeld = true; if (!this.padPrev['jump']) jumpPressed = true; }

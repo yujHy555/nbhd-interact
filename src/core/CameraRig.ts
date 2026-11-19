@@ -11,6 +11,12 @@ export class CameraRig {
   public distance = 13;
   public height = 4.6;
   public sideOffset = -3.5;
+  public orbitYaw = 0;   // gamepad left stick rotates this
+  public orbitPitch = 0;
+  public addOrbit(dx: number, dy: number) {
+    this.orbitYaw += dx;
+    this.orbitPitch = BABYLON.Scalar.Clamp(this.orbitPitch + dy, -0.35, 0.45);
+  }
 
   constructor(scene: BABYLON.Scene, canvas: HTMLCanvasElement) {
     this.scene = scene;
@@ -37,10 +43,17 @@ export class CameraRig {
 
   public update(dt: number, target: BABYLON.Vector3, lookAhead = 0) {
     // Desired: side-scrolling 2.5D view (camera in front at -Z, offset left)
+    // Base offset, then rotate around the target by the gamepad orbit angles
+    const ox = this.sideOffset + lookAhead * 1.5;
+    const oy = this.height;
+    const oz = -this.distance;
+    const cy = Math.cos(this.orbitYaw), sy = Math.sin(this.orbitYaw);
+    const rx = ox * cy - oz * sy;
+    const rz = ox * sy + oz * cy;
     const desired = new BABYLON.Vector3(
-      target.x + this.sideOffset + lookAhead * 1.5,
-      target.y + this.height,
-      -this.distance,
+      target.x + rx,
+      target.y + oy + this.orbitPitch * 6,
+      rz,
     );
     const k = Math.min(1, dt * 4.5);
     this.current.x += (desired.x - this.current.x) * k;

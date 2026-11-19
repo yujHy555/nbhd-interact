@@ -1,6 +1,6 @@
 import * as BABYLON from 'babylonjs';
 
-export type AnimState = 'idle' | 'walk' | 'run' | 'jump' | 'fall' | 'land' | 'strafe';
+export type AnimState = 'idle' | 'walk' | 'run' | 'jump' | 'doubleJump' | 'fall' | 'land' | 'strafe' | 'crouch' | 'flip';
 export type MoveDir = 'forward' | 'back' | 'left' | 'right' | 'idle';
 
 export interface CharacterColors {
@@ -138,10 +138,11 @@ export class Character {
     // ---- Core ----
     this.pelvis = this.node('pelvis', this.root, 0, 0.96, 0);
     this.mesh('pelvisMesh', this.pelvis, 'sphere', { diameter: 0.36, segments: 16 }, this.outfitMat, [0, 0, 0], [0, 0, 0], [1.15, 0.72, 0.85]);
-    this.mesh('belt', this.pelvis, 'cyl', { diameter: 0.38, height: 0.08, tessellation: 20 }, this.accentMat, [0, 0.04, 0]);
+    // Belt must sit OUTSIDE the pelvis ellipsoid (x radius ~0.21, z ~0.15)
+    this.mesh('belt', this.pelvis, 'cyl', { diameter: 0.45, height: 0.055, tessellation: 20 }, this.accentMat, [0, 0.01, 0], [0, 0, 0], [1, 1, 0.78]);
 
     this.spine = this.node('spine', this.pelvis, 0, 0.14, 0);
-    this.mesh('spineMesh', this.spine, 'sphere', { diameter: 0.38, segments: 16 }, this.outfitMat, [0, 0.14, 0], [0, 0, 0], [1.05, 1.35, 0.78]);
+    this.mesh('spineMesh', this.spine, 'sphere', { diameter: 0.34, segments: 16 }, this.outfitMat, [0, 0.16, 0], [0, 0, 0], [1.05, 1.25, 0.78]);
 
     this.chest = this.node('chest', this.spine, 0, 0.30, 0);
     this.mesh('chestMesh', this.chest, 'sphere', { diameter: 0.42, segments: 16 }, this.outfitMat, [0, 0.06, 0], [0, 0, 0], [1.25, 0.95, 0.82]);
@@ -222,6 +223,7 @@ export class Character {
 
   // ---------------------------------------------------------------- public API
   public getMeshes() { return this.meshes; }
+  public getCyclePhase() { return this.phase; }
   public setPosition(x: number, y: number, z: number) { this.root.position.set(x, y, z); }
   public get position() { return this.root.position; }
 
@@ -235,7 +237,9 @@ export class Character {
       if (s === 'land') this.onLand?.();
     }
     if (this.mixamo) {
-      const clip = s === 'run' ? 'run' : s === 'walk' ? 'walk' : s === 'jump' ? 'jump' : 'idle';
+      const clip = s === 'run' ? 'run' : s === 'walk' ? 'walk' : s === 'strafe' ? 'walk'
+        : s === 'jump' || s === 'doubleJump' || s === 'flip' ? 'jump'
+        : s === 'crouch' ? 'crouch' : s === 'land' ? 'land' : s === 'fall' ? 'fall' : 'idle';
       this.playMocap(clip);
     }
   }
@@ -296,6 +300,20 @@ export class Character {
         hipL = 0.35; hipR = -0.2; kneeL = 1.0; kneeR = 0.5;
         armL = 1.2; armR = 1.2; elbowL = elbowR = 0.3; // arms UP and forward
         lean = -0.06;
+        break;
+      case 'doubleJump': case 'flip': {
+        // Tucked flip pose — arms in, knees to chest
+        const tuck = this.state === 'flip' ? 1 : 0.7;
+        hipL = 0.9 * tuck; hipR = 0.9 * tuck;
+        kneeL = 1.4 * tuck; kneeR = 1.4 * tuck;
+        armL = 0.6; armR = 0.6; elbowL = elbowR = 1.0;
+        bob = 0.03; lean = -0.1;
+        break;
+      }
+      case 'crouch':
+        hipL = 0.9; hipR = 0.9; kneeL = 1.5; kneeR = 1.5;
+        armL = 0.7; armR = 0.7; elbowL = elbowR = 0.6;
+        bob = -0.3; lean = 0.22;
         break;
       case 'fall':
         hipL = -0.15; hipR = 0.25; kneeL = 0.5; kneeR = 0.35;

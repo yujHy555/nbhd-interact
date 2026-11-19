@@ -36,7 +36,7 @@ export class Environment {
     const skyTex = new BABYLON.HDRCubeTexture('/hdri/vintage_measuring_lab_2k.hdr', scene, 256);
     skyTex.gammaSpace = false;
     skyTex.coordinatesMode = BABYLON.Texture.SKYBOX_MODE;
-    skyTex.level = 0.85; // tone-mapped by ACES → rich, not blown out
+    skyTex.level = 1.45; // brighter HDRI background while keeping IBL at 0.85
     const sky = BABYLON.MeshBuilder.CreateBox('skyBox', { size: 2000 }, scene);
     const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
     skyMat.backFaceCulling = false;

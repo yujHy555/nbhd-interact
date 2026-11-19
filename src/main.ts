@@ -7,6 +7,7 @@ import { CameraRig } from './core/CameraRig';
 import { Character, DEFAULT_COLORS, CharacterColors, AnimState, MoveDir } from './character/Character';
 import { MixamoController } from './character/Mixamo';
 import { Polish } from './core/Polish';
+import { GameAudio } from './core/GameAudio';
 import { Materials } from './world/Materials';
 import { World, Pickup, ZoneMarker } from './world/World';
 import { UI } from './ui/UI';
@@ -24,6 +25,9 @@ class App {
   private character!: Character;
   private mixamo!: MixamoController;
   private polish!: Polish;
+  private audio!: GameAudio;
+  private jumpsUsed = 0;
+  private flipTimer = 0;
   private materials!: Materials;
   private world!: World;
   private ui!: UI;
@@ -59,6 +63,10 @@ class App {
     this.scene.imageProcessingConfiguration.exposure = 1.0;
     this.scene.imageProcessingConfiguration.contrast = 1.28;
 
+    this.audio = new GameAudio();
+    window.addEventListener('pointerdown', () => this.audio.unlock(), { once: true });
+    window.addEventListener('keydown', () => this.audio.unlock(), { once: true });
+
     this.ui = new UI(DEFAULT_COLORS, {
       customize: (c: CharacterColors) => this.character.applyColors(c),
       rotate: (on: boolean) => { this.turntableOn = on; },
@@ -83,8 +91,9 @@ class App {
       this.camera.punch(3);
       this.flashPickup(p);
       this.polish?.sparkle(p.mesh.position);
+      this.audio.pickup();
     };
-    this.world.onZone = (z: ZoneMarker) => this.ui.setZone(z.name);
+    this.world.onZone = (z: ZoneMarker) => { this.ui.setZone(z.name); this.audio.zone(); };
 
     this.character = new Character(this.scene);
     // Mixamo pipeline: drop a converted .glb at /models/character.glb to auto-load
@@ -234,7 +243,7 @@ class App {
     const s = this.input.state;
 
     const accel = 46;
-    const maxSpeed = 4.6 * (this.keys.has('ShiftLeft') ? 1.55 : 1);
+    const maxSpeed = 3.8 * (this.keys.has('ShiftLeft') ? 1.4 : 1); // tighter, no tunneling
     const v = this.havok.getVelocity(this.playerBody);
 
     // Desired planar velocity from input
@@ -246,13 +255,34 @@ class App {
     if (Math.abs(s.axisZ) > 0.05) nvz += (desiredZ - v.z) * Math.min(1, accel * dt / Math.max(maxSpeed, 0.1));
     else nvz *= Math.pow(0.02, dt);
 
-    // NO auto-jump; jump strictly on press with coyote + buffer
+    // NO auto-jump; jump strictly on press. 2 jumps: 2nd is an air FLIP.
     this.coyote = this.grounded ? 0.12 : Math.max(0, this.coyote - dt);
     this.jumpBuffer = s.jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
     let nvy = v.y;
-    if (this.jumpBuffer > 0 && this.coyote > 0) {
-      nvy = 8.4;
+    if (this.grounded) this.jumpsUsed = 0;
+    if (this.jumpBuffer > 0 && (this.coyote > 0 || (this.jumpsUsed === 1 && !this.grounded))) {
+      if (this.coyote > 0 && this.jumpsUsed === 0) {
+        nvy = 8.4;
+        this.audio.jump();
+      } else {
+        // Double jump — flip!
+        nvy = 7.6;
+        this.jumpsUsed = 2;
+        this.flipTimer = 0.55;
+        this.audio.doubleJump();
+        this.audio.flip();
+        this.polish?.sparkle(this.playerProxy.position);
+      }
       this.jumpBuffer = 0; this.coyote = 0; this.grounded = false;
+      if (this.jumpsUsed < 2) this.jumpsUsed = 1;
+    }
+    // Flip rotation
+    if (this.flipTimer > 0) {
+      this.flipTimer = Math.max(0, this.flipTimer - dt);
+      this.character.root.rotation.x = (1 - this.flipTimer / 0.55) * Math.PI * 2;
+      this.character.setState('flip', nvy);
+    } else if (this.character.root.rotation.x !== 0) {
+      this.character.root.rotation.x *= Math.pow(0.001, dt);
     }
 
     this.havok.setVelocity(this.playerBody, new BABYLON.Vector3(nvx, nvy, nvz));
@@ -263,11 +293,20 @@ class App {
     if (p.x > 198) { p.x = 198; }
     if (p.y < -6) { this.havok.teleport(this.playerBody, new BABYLON.Vector3(2.4, 1.0, 0)); }
 
-    // Ground check after physics step
-    this.grounded = this.checkGround() && v.y <= 0.4;
+    // Ground check — use the NEW vertical velocity (not stale pre-jump v)
+    const wasGrounded = this.grounded;
+    this.grounded = this.checkGround() && nvy <= 0.4;
+    if (this.grounded && !wasGrounded && v.y < -1.5) {
+      this.audio.land(Math.abs(v.y));
+      this.character.landingImpact(v.y);
+    }
 
-    // Sync visual character to physics capsule (feet at capsule bottom)
-    this.character.setPosition(p.x, p.y - 0.7, p.z);
+    // Crouch when holding Ctrl / C while grounded
+    const crouching = (this.keys.has('ControlLeft') || this.keys.has('KeyC')) && this.grounded;
+
+    // Sync visual character to physics capsule. Feet extend ~0.12 below the
+    // character root, so lift it to keep shoes on the ground surface.
+    this.character.setPosition(p.x, p.y - 0.58, p.z);
 
     // Heading from movement direction (character faces -Z at heading 0)
     let targetHeading = this.facing;
@@ -282,6 +321,7 @@ class App {
     let state: AnimState;
     let dir: MoveDir = 'idle';
     if (!this.grounded) state = vertical > 0.8 ? 'jump' : 'fall';
+    else if (crouching) { state = 'crouch'; this.audio.crouch(); }
     else if (planSpeed > 0.3) {
       // Direction relative to heading
       const facingX = -Math.sin(this.facing), facingZ = -Math.cos(this.facing);
@@ -293,12 +333,23 @@ class App {
 
     this.character.setState(state, vertical, dir);
     this.character.update(dt, planSpeed, this.facing);
+    // Footsteps perfectly synced to the animation cycle
+    this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), !this.grounded, state);
   }
 
   private frame() {
     const dt = Math.min(this.engine.getDeltaTime() / 1000, 0.05);
     // Explicit Havok step (kept deterministic & in sync with gameplay)
-    if (this.mode === 'explore') this.scene.getPhysicsEngine()?._step(Math.min(dt, 1 / 30));
+    // Gamepad left stick orbits the camera (clamped — never through the ground)
+    if (Math.abs(this.input.state.cameraX) > 0.05 || Math.abs(this.input.state.cameraZ) > 0.05) {
+      this.camera.addOrbit(-this.input.state.cameraX * dt * 1.6, -this.input.state.cameraZ * dt * 1.2);
+    }
+    // Sub-stepped physics (3× per frame) — super tight collisions, no tunneling
+    if (this.mode === 'explore') {
+      const sub = Math.min(dt, 1 / 30) / 3;
+      const pe = this.scene.getPhysicsEngine();
+      for (let i = 0; i < 3; i++) pe?._step(sub);
+    }
     if (this.mode === 'welcome') {
       this.input.update(dt);
       this.character.setState('idle', 0, 'idle');
@@ -307,7 +358,7 @@ class App {
       const tt = this.world.getTurntable();
       if (tt) tt.rotation.y = this.turntableAngle;
       this.character.root.rotation.y = this.turntableAngle;
-      this.character.setPosition(0, 0.3, 0);
+      this.character.setPosition(0, 0.42, 0); // turntable top 0.3 + 0.12 foot clearance
       this.camera.update(dt, new BABYLON.Vector3(0, 1.2, 0));
     } else {
       this.updateController(dt);

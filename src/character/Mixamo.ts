@@ -64,6 +64,9 @@ export class MixamoController implements MixamoBinding {
       jump: ['jump', 'jump up', 'jumping', 'jump in place'],
       fall: ['fall', 'falling', 'fall down'],
       land: ['land', 'landing', 'landing idle'],
+      crouch: ['crouch', 'crouching', 'crouch idle', 'sneak'],
+      flip: ['flip', 'front flip', 'aerial flip', 'jump flip'],
+      doublejump: ['double jump', 'jump 2', 'flip jump'],
       back: ['walk backwards', 'backward walk', 'walk back'],
       strafe: ['strafe', 'sidestep', 'walk sideways'],
     };
