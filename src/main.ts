@@ -149,18 +149,13 @@ class App {
   }
 
   private enableShadowReceivers() {
+    // Every real surface receives sun shadows; structural meshes also cast.
     for (const m of this.scene.meshes) {
       if (m.name === 'skyBox') continue;
+      m.receiveShadows = true;
       if (m.name === 'platform' || m.name === 'ramp' || m.name === 'rampRail' ||
-          m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'platEdge' ||
-          m.name === 'protoCube' || m.name.startsWith('zone') || m.name.includes('Ball') ||
-          m.name.includes('BallPedestal') || m.name === 'macbethChart' || m.name === 'macbethFrame' ||
-          m.name === 'ground' || m.name.startsWith('grid')) {
-        m.receiveShadows = true;
-        if (m.name === 'platform' || m.name === 'ramp' || m.name === 'rampRail' ||
-            m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'protoCube') {
-          this.env.registerShadowCaster(m as BABYLON.Mesh);
-        }
+          m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'protoCube') {
+        this.env.registerShadowCaster(m as BABYLON.Mesh);
       }
     }
   }
@@ -229,6 +224,7 @@ class App {
       if (uv) vd.uvs = Array.from(uv);
       vd.applyToMesh(seg);
       seg.material = src.material;
+      seg.receiveShadows = true;
       seg.setEnabled(false);
       const START = 52; // after the ramp + platform
       const roadW = bx1 - bx0, roadD = bz1 - bz0;
@@ -270,6 +266,7 @@ class App {
         { x: 82, z: 12, face: Math.PI }, { x: 124, z: 15, face: 0 },
         { x: 168, z: 11, face: Math.PI },
       ];
+      source.receiveShadows = true; // instances inherit this
       source.setEnabled(false); // hide the import origin; instances are the herd
       spots.forEach((s, i) => {
         const cow = source.createInstance(`cow${i}`);

@@ -121,11 +121,10 @@ export class World {
     // exactly at its top (2.7 m), so slope detection and alignment line up.
     this.addRamp(39.3231, 0, 44, 2.7, 0, 6);
     this.addPlatform(47, 2.2, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 2.7
-    this.addPlatform(58, 2.8, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 3.3
+    // Road section occupies x=52..92 — no platforms on or with the road.
 
     // ---- What We Do zone (78..150): content cubes + platforms ----
-    this.addPlatform(72, 1.0, 0, 6, 1, 5, [1, 0.78, 0.2]);
-    this.addPlatform(84, 1.8, 0, 5, 1, 5, [1, 0.78, 0.2]);      // top 2.3
+    // Keep x=52..92 clear for the modular road.
     this.addPlatform(96, 2.6, 0, 5, 1, 5, [1, 0.78, 0.2]);      // top 3.1
     this.addPlatform(120, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 3.5
     this.addPlatform(134, 3.6, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 4.1
@@ -139,6 +138,7 @@ export class World {
     // Prototype cubes scattered along the route
     for (let i = 0; i < 12; i++) {
       const x = 8 + i * 15;
+      if (x >= 52 && x <= 92) continue; // keep the road section completely clear
       const s = 0.8 + (i % 3) * 0.35;
       const cube = BABYLON.MeshBuilder.CreateBox('protoCube', { size: s }, this.scene);
       cube.position.set(x, s / 2 + (i % 2 ? 0.6 : 0), -5 - (i % 3));

@@ -97,14 +97,24 @@ export class Character {
     // the Mixamo clip overwrites the foot bones during rendering.
     scene.onAfterAnimationsObservable.add(() => {
       if (!this.mixamo || Math.abs(this.footPitch) < 0.005) return;
-      const extra = BABYLON.Quaternion.RotationAxis(this.footPitchAxis, this.footPitch);
+      // World-space slope tilt, conjugated into each foot bone's parent space
+      // so the sole conforms to the incline regardless of the rig's local axes.
+      const W = BABYLON.Quaternion.RotationAxis(this.footPitchAxis, this.footPitch);
       for (const m of this.mixamo.root.getChildMeshes(false)) {
         const sk = (m as BABYLON.Mesh).skeleton;
         if (!sk) continue;
+        sk.computeAbsoluteMatrices();
         for (const boneName of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
           const b = sk.bones.find((x) => x.name === boneName);
           if (!b || !b.rotationQuaternion) continue;
-          b.rotationQuaternion = b.rotationQuaternion.multiply(extra);
+          const parent = b.getParent();
+          const parentQ = parent
+            ? BABYLON.Quaternion.FromRotationMatrix(parent.getAbsoluteMatrix())
+            : BABYLON.Quaternion.Identity();
+          // Conjugate the world tilt into the bone's parent space, then apply
+          // it on top of the animation's current foot rotation.
+          const conj = BABYLON.Quaternion.Inverse(parentQ).multiply(W).multiply(parentQ);
+          b.rotationQuaternion = conj.multiply(b.rotationQuaternion);
         }
       }
     });
@@ -464,7 +474,9 @@ export class Character {
     // the root lift below. Tilting the whole body looks like falling over.
     this.slopePivot.rotation.z = 0;
     this.footPitch = angle;
-    this.footPitchAxis.set(-Math.sin(this.heading), 0, Math.cos(this.heading));
+    // Lateral axis (perpendicular to travel): cross(forward, up) = (-cosθ,0,sinθ).
+    // At 90° facing (+X) this is world +Z — the correct ramp pitch axis.
+    this.footPitchAxis.set(-Math.cos(this.heading), 0, Math.sin(this.heading));
     if (!this.mixamo) return;
     // Measure the real animated ankle bones (the skinned mesh's bounding box
     // is bind-pose only and does not follow the walk cycle).

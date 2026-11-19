@@ -29,7 +29,7 @@ export class Environment {
     // so the 4096×2048 source panorama stays crisp on screen.
     this.envTexture = new BABYLON.EquiRectangularCubeTexture(skyUrl, scene, 512, false, false);
     scene.environmentTexture = this.envTexture as any;
-    scene.environmentIntensity = 0.95;
+    scene.environmentIntensity = 0.75; // less ambient lift → stronger contrast
     scene.ambientColor = new BABYLON.Color3(0.10, 0.12, 0.16);
 
     // Visible background: the full 4096×2048 panorama mapped directly onto a
@@ -59,15 +59,15 @@ export class Environment {
     this.sun.diffuse = new BABYLON.Color3(1.0, 0.96, 0.88);
     this.sun.specular = new BABYLON.Color3(1, 0.98, 0.92);
     this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
-    this.shadowGen.useBlurExponentialShadowMap = true;
-    this.shadowGen.blurKernel = 32;
-    this.shadowGen.darkness = 0.18; // natural but clearly visible contact shadows
-    this.shadowGen.bias = 0.0015;
-    this.shadowGen.normalBias = 0.02;
+    this.shadowGen.usePercentageCloserFiltering = true;
+    this.shadowGen.filteringQuality = BABYLON.ShadowGenerator.QUALITY_HIGH;
+    this.shadowGen.darkness = 0.02; // deep, natural, clearly visible shadows
+    this.shadowGen.bias = 0.0008;
+    this.shadowGen.normalBias = 0.01;
 
     // ---- Fill light ----
     this.hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-    this.hemi.intensity = 0.55;
+    this.hemi.intensity = 0.32; // lower fill so sun shadows read strongly
     this.hemi.diffuse = new BABYLON.Color3(0.65, 0.78, 0.95);
     this.hemi.groundColor = new BABYLON.Color3(0.18, 0.16, 0.14);
 
