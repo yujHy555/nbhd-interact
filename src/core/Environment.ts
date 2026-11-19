@@ -75,27 +75,27 @@ export class Environment {
     groundMat.metallic = 0.05;
     groundMat.roughness = 0.82;
     groundMat.environmentIntensity = 0.6;
+    // ---- 1 m × 1 m metric grid (single tiled texture — cheap, crisp) ----
+    // One 64px tile = exactly 1 m. uScale/vScale map tiles to the 400×80 m plane.
+    const TILE = 64;
+    const gridTex = new BABYLON.DynamicTexture('gridTile', { width: TILE, height: TILE }, scene, true);
+    const gctx = gridTex.getContext();
+    gctx.fillStyle = '#3b4048';
+    gctx.fillRect(0, 0, TILE, TILE);
+    gctx.strokeStyle = 'rgba(150,170,195,0.55)';
+    gctx.lineWidth = 2;
+    gctx.strokeRect(1, 1, TILE - 2, TILE - 2);
+    gridTex.update();
+    gridTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    gridTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    gridTex.uScale = 400; // 400 m wide → 400 one-metre tiles across X
+    gridTex.vScale = 80;  // 80 m deep  → 80 one-metre tiles across Z
+    groundMat.albedoTexture = gridTex;
+    groundMat.albedoColor = new BABYLON.Color3(1, 1, 1);
+
     this.ground.material = groundMat;
     this.ground.receiveShadows = true;
     this.ground.position.x = 90; // centre of the horizontal world
-
-    // Subtle grid lines for scale reference
-    const gridMat = new BABYLON.StandardMaterial('gridMat', scene);
-    gridMat.diffuseColor = new BABYLON.Color3(0.35, 0.4, 0.45);
-    gridMat.emissiveColor = new BABYLON.Color3(0.06, 0.08, 0.1);
-    gridMat.alpha = 0.4;
-    for (let x = -100; x <= 300; x += 5) {
-      const line = BABYLON.MeshBuilder.CreateBox('gridLine', { width: 0.02, height: 0.005, depth: 80 }, scene);
-      line.position.set(x, 0.011, 0);
-      line.material = gridMat;
-      line.isPickable = false;
-    }
-    for (let z = -40; z <= 40; z += 5) {
-      const line = BABYLON.MeshBuilder.CreateBox('gridLineZ', { width: 400, height: 0.005, depth: 0.02 }, scene);
-      line.position.set(90, 0.012, z);
-      line.material = gridMat;
-      line.isPickable = false;
-    }
 
     this.buildMaterialBalls();
     this.buildMacbethChart();

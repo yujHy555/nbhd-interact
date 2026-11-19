@@ -233,12 +233,14 @@ export class Character {
         const s = 1.8 / h;
         binding.root.scaling.setAll(s);
       }
-      // Force world matrices to refresh with the new scale, then seat feet at y=0
+      // Seat feet at the ROOT origin (local y=0) — NOT absolute world y.
+      // Using world y here made the model sink once the root moved to ground.
       binding.root.computeWorldMatrix(true);
       for (const m of meshes) m.computeWorldMatrix(true);
       let low = Infinity;
       for (const m of meshes) low = Math.min(low, m.getBoundingInfo().boundingBox.minimumWorld.y);
-      binding.root.position.y -= low;
+      const rootY = this.root.getAbsolutePosition().y;
+      binding.root.position.y -= (low - rootY); // feet now at root.y (local 0)
       binding.root.computeWorldMatrix(true);
       for (const m of meshes) m.computeWorldMatrix(true);
     }

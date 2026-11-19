@@ -22,14 +22,27 @@ export class Materials {
     return m;
   }
 
+  /** Matte StandardMaterial for colored platforms — NO specular/highlights. */
+  matte(name: string, rgb: [number, number, number]) {
+    const key = `matte-${name}-${rgb.join('-')}`;
+    if (this.cache.has(key)) return this.cache.get(key)!;
+    const m = new BABYLON.StandardMaterial(name, this.scene);
+    m.diffuseColor = new BABYLON.Color3(rgb[0], rgb[1], rgb[2]);
+    m.specularColor = BABYLON.Color3.Black(); // zero reflections
+    m.emissiveColor = new BABYLON.Color3(0, 0, 0);
+    m.disableLighting = false;
+    this.cache.set(key, m);
+    return m;
+  }
+
   /** Proper lit StandardMaterial for all platforms / surfaces. */
   concrete(name: string) {
     const key = `concrete-${name}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
     const m = new BABYLON.StandardMaterial(name, this.scene);
     m.diffuseColor = new BABYLON.Color3(0.38, 0.43, 0.5);
-    m.specularColor = new BABYLON.Color3(0.18, 0.2, 0.24);
-    m.specularPower = 48;
+    m.specularColor = new BABYLON.Color3(0.03, 0.035, 0.04); // near-zero — matte
+    m.specularPower = 8;
     m.emissiveColor = new BABYLON.Color3(0.0, 0.0, 0.0); // no flat lift
     m.disableLighting = false;
     this.cache.set(key, m);

@@ -11,6 +11,7 @@ export interface InputState {
   axisZ: number;
   cameraX: number;  // left stick → camera orbit
   cameraZ: number;
+  run: boolean;     // Shift key OR gamepad shoulder → sprint / run animation
   anyInput: boolean;
 }
 
@@ -18,7 +19,7 @@ export interface InputState {
 export class Input {
   public state: InputState = {
     left: false, right: false, forward: false, back: false,
-    jump: false, jumpPressed: false, axisX: 0, axisZ: 0, cameraX: 0, cameraZ: 0, anyInput: false,
+    jump: false, jumpPressed: false, axisX: 0, axisZ: 0, cameraX: 0, cameraZ: 0, run: false, anyInput: false,
   };
   private keys = new Set<string>();
   private justPressed = new Set<string>();
@@ -61,6 +62,7 @@ export class Input {
     if (this.keys.has('back')) az -= 1;
     let jumpHeld = this.keys.has('jump');
     let jumpPressed = snap.has('jump');
+    this.state.run = false;
 
     // Gamepad — left stick movement, A button jump
     if (navigator.getGamepads) {
@@ -81,6 +83,8 @@ export class Input {
         const jp = btn(0);
         if (jp) { jumpHeld = true; if (!this.padPrev['jump']) jumpPressed = true; }
         this.padPrev['jump'] = jp;
+        // Shoulder / stick-click = sprint (the gamepad "Shift equivalent")
+        this.state.run = btn(6) || btn(7) || btn(10) || btn(11);
       }
     }
 

@@ -33,7 +33,7 @@ export class World {
   private addPlatform(x: number, y: number, z: number, w: number, h: number, d: number, color?: [number, number, number]) {
     const box = BABYLON.MeshBuilder.CreateBox('platform', { width: w, height: h, depth: d }, this.scene);
     box.position.set(x, y, z);
-    box.material = color ? this.mats.emissive('platAccent', color) : this.mats.concrete('platConcrete');
+    box.material = color ? this.mats.matte('platAccent', color) : this.mats.concrete('platConcrete');
     box.receiveShadows = true;
     this.colliders.push({ x, y, z, w, h, d });
     // Glowing top edge
@@ -56,17 +56,7 @@ export class World {
   }
 
   private build() {
-    // ---- Welcome zone (0..70): turntable + material test area ----
-    // Turntable platform (the character starts here)
-    const turntable = BABYLON.MeshBuilder.CreateCylinder('turntable', { diameter: 4.2, height: 0.3, tessellation: 48 }, this.scene);
-    turntable.position.set(0, 0.15, 0);
-    const tm = new BABYLON.PBRMaterial('turntableMat', this.scene);
-    tm.albedoColor = new BABYLON.Color3(0.1, 0.12, 0.16);
-    tm.metallic = 0.7; tm.roughness = 0.25; tm.environmentIntensity = 1.2;
-    turntable.material = tm;
-    turntable.receiveShadows = true;
-    this.colliders.push({ x: 0, y: 0.15, z: 0, w: 4.2, h: 0.3, d: 4.2 });
-
+    // ---- Welcome zone (0..70): material test area, hero starts on ground ----
     // Welcome zone stepping platforms
     this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);
     this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);
@@ -111,8 +101,8 @@ export class World {
       this.pickups.push({ mesh: orb, pos: orb.position.clone(), collected: false, phase: i * 0.7 });
     }
 
-    // Zone sign posts
-    for (const z of this.zones) this.addZoneSign(z);
+    // Zone sign posts (skip the start area — keep it clean)
+    for (const z of this.zones) if (z.x > 0) this.addZoneSign(z);
   }
 
   private addZoneSign(zone: ZoneMarker) {
@@ -149,6 +139,5 @@ export class World {
     }
   }
 
-  public getTurntable() { return this.scene.getMeshByName('turntable') as BABYLON.Mesh | null; }
   public dispose() { this.root.dispose(false, false); }
 }
