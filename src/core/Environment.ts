@@ -51,8 +51,10 @@ export class Environment {
     sky.applyFog = false;
 
     // ---- Sun (directional) with shadows ----
-    this.sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.55, -1, 0.35), scene);
-    this.sun.position = new BABYLON.Vector3(60, 120, -60);
+    // Shadow falls toward the camera (-Z) and screen-left so the hero's cast
+    // shadow is clearly visible in front of her, not hidden behind the body.
+    this.sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.5, -1, -0.45), scene);
+    this.sun.position = new BABYLON.Vector3(60, 120, 60);
     this.sun.intensity = 2.6;
     this.sun.diffuse = new BABYLON.Color3(1.0, 0.96, 0.88);
     this.sun.specular = new BABYLON.Color3(1, 0.98, 0.92);
@@ -114,8 +116,8 @@ export class Environment {
   /** Keep the sun's shadow volume centred on the action so contact shadows
    *  stay crisp and visible at every point in the level. */
   public focusSun(target: BABYLON.Vector3) {
-    this.sun.position.set(target.x + 42, target.y + 60, target.z - 30);
-    this.sun.direction.set(-0.55, -1, 0.35);
+    this.sun.position.set(target.x + 42, target.y + 60, target.z + 38);
+    this.sun.direction.set(-0.5, -1, -0.45);
   }
 
   /** Equirectangular canvas → cube texture used as IBL + sky. */
