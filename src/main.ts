@@ -448,13 +448,21 @@ class App {
     const v = this.pvel, p = this.ppos;
     const GRAVITY = 22;
 
-    // ---- WORLD-FIXED movement basis ----
-    // Input maps to fixed world axes so camera orbit (right stick) can NEVER
-    // change the player's movement direction. A/D → ±X (level start→end),
-    // W/S → ±Z (depth). This keeps controls fully independent of the camera.
+    // ---- Camera-relative movement basis ----
+    // Movement is relative to where the camera is LOOKING, so after orbiting
+    // with the right stick, "right" still moves the player screen-right. The
+    // right stick never adds to ax/az — it only rotates the camera — so it
+    // cannot move the player by itself.
+    const cam = this.camera.getCamera();
+    const fwd = cam.getTarget().subtract(cam.position);
+    fwd.y = 0;
+    if (fwd.lengthSquared() < 1e-6) fwd.set(0, 0, 1);
+    fwd.normalize();
+    const right = BABYLON.Vector3.Cross(BABYLON.Axis.Y, fwd).normalize();
+
     const ax = s.axisX, az = s.axisZ;
-    let dx = ax;   // +X = toward level end
-    let dz = az;   // +Z = horizon
+    let dx = right.x * ax + fwd.x * az;
+    let dz = right.z * ax + fwd.z * az;
     const mag = Math.hypot(dx, dz);
     if (mag > 1) { dx /= mag; dz /= mag; }   // no diagonal speed boost
     const moveInput = mag > 0.08;
@@ -594,7 +602,7 @@ class App {
       const dot = (v.x * fx + v.z * fz) / Math.max(planSpeed, 0.001);
       if (dot > 0.45) { state = running ? 'run' : 'walk'; dir = 'forward'; }
       else if (dot < -0.45) { state = 'walk'; dir = 'back'; }
-      else { state = 'walk'; dir = v.x > 0 ? 'right' : 'left'; }
+      else { state = 'walk'; dir = (v.x * right.x + v.z * right.z) > 0 ? 'right' : 'left'; }
     } else state = 'idle';
 
     this.character.setState(state, v.y, dir);
