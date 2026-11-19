@@ -33,6 +33,31 @@ export class SciFiCity {
     const W = maxX - minX, H = maxY - minY, D = maxZ - minZ;
     const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
 
+    // Find the DOMINANT flat roof height from geometry. The bounding-box top
+    // includes tiny antenna/details (a few verts), which made the player stand
+    // far above the real walkable roof. We histogram vertex heights in the
+    // upper part of the building and take the most-populated 0.1 m band.
+    let roofLocal = maxY;
+    {
+      const hist = new Map<number, number>();
+      for (const m of meshes) {
+        const p = m.getVerticesData(BABYLON.VertexBuffer.PositionKind)!;
+        const wm = m.getWorldMatrix();
+        const v = new BABYLON.Vector3();
+        for (let i = 0; i < p.length; i += 3) {
+          BABYLON.Vector3.TransformCoordinatesToRef(new BABYLON.Vector3(p[i], p[i + 1], p[i + 2]), wm, v);
+          const y = v.y;
+          if (y < minY + H * 0.6) continue;
+          const band = Math.round(y * 10) / 10;
+          hist.set(band, (hist.get(band) || 0) + 1);
+        }
+      }
+      let bestCount = -1;
+      for (const [band, count] of hist) {
+        if (count > bestCount) { bestCount = count; roofLocal = band; }
+      }
+    }
+
     // Bake each sub-mesh into local space centred on the building, base at y=0.
     for (const m of meshes) {
       const pos = m.getVerticesData(BABYLON.VertexBuffer.PositionKind)!;
@@ -68,12 +93,16 @@ export class SciFiCity {
     // Building placements — deep background (large +Z), along the level.
     // Deep background — pushed well back in +Z so they never crowd the
     // travelators/road in the foreground play strip (z ≈ 0).
-    const spots = [
+    const spots: { x: number; z: number; s: number }[] = [
       { x: 60, z: 58, s: 1.0 }, { x: 90, z: 56, s: 1.4 }, { x: 130, z: 48, s: 1.1 },
       { x: 180, z: 60, s: 1.6 }, { x: 240, z: 50, s: 1.2 }, { x: 310, z: 62, s: 1.5 },
       { x: 390, z: 52, s: 1.3 }, { x: 470, z: 64, s: 1.7 }, { x: 560, z: 54, s: 1.4 },
       { x: 660, z: 66, s: 1.8 }, { x: 760, z: 56, s: 1.5 },
     ];
+    // Continue the skyline across the expanded map (800..1450).
+    for (let x = 820, i = 0; x <= 1440; x += 70, i++) {
+      spots.push({ x, z: 50 + (i % 4) * 6, s: 1.2 + (i % 3) * 0.3 });
+    }
     for (let i = 0; i < spots.length; i++) {
       const s = spots[i];
       const bRoot = new BABYLON.TransformNode(`sciFiBuilding${i}`, this.scene);
@@ -87,11 +116,12 @@ export class SciFiCity {
         inst.isPickable = false;
         inst.receiveShadows = true;
       }
-      // Collider matching the visible bounding box (top = roof). Use the
-      // widest part's footprint: a generous slab the player can land on.
+      // Collider top = the REAL dominant roof surface (not the bbox top with
+      // its tiny antenna details), so the player's feet land exactly on it.
+      const roofH = roofLocal * s.s;
       onCollider({
-        x: s.x, y: (H * s.s) / 2, z: s.z,
-        w: W * s.s * 0.92, h: H * s.s, d: D * s.s * 0.92,
+        x: s.x, y: roofH / 2, z: s.z,
+        w: W * s.s * 0.9, h: roofH, d: D * s.s * 0.9,
       });
     }
   }

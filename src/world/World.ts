@@ -25,6 +25,10 @@ export class World {
     { x: 580, name: 'FRONTIER' },
     { x: 700, name: 'SUMMIT' },
     { x: 820, name: 'BEYOND' },
+    { x: 950, name: 'GALAXY' },
+    { x: 1090, name: 'COSMOS' },
+    { x: 1240, name: 'INFINITY' },
+    { x: 1400, name: 'APEX' },
   ];
   private scene: BABYLON.Scene;
   private mats: Materials;
@@ -253,13 +257,24 @@ export class World {
     this.addPlatform(286, 2.2, 0, 7, 1, 5, [0.6, 0.5, 0.95]);
     this.addPlatform(302, 1.6, 0, 8, 1, 5, [0.95, 0.7, 0.3]);
 
+    // ---- Far world (320..1450): expansive new frontier ----
+    const farColors: [number, number, number][] = [
+      [0.3, 0.9, 0.85], [0.75, 0.45, 0.95], [0.95, 0.62, 0.35], [0.45, 0.8, 0.95],
+    ];
+    for (let x = 320, i = 0; x <= 1440; x += 22, i++) {
+      const h = 1.0 + ((i * 7) % 5) * 0.45;
+      this.addPlatform(x, h - 0.5, 0, 7 + (i % 3), 1, 5, farColors[i % farColors.length]);
+      // occasional higher perch
+      if (i % 4 === 0) this.addPlatform(x + 10, h + 0.8, 0, 5, 1, 4, farColors[(i + 1) % farColors.length]);
+    }
+
     // AAA STYLIZED collectibles — cute little cardboard boxes with toon
     // shading, tape strips, flaps and a happy face. Placed high above the
     // highest nearby surface so they NEVER intersect anything.
     this.initToonShader();
 
-    for (let i = 0; i < 16; i++) {
-      const x = 12 + i * 10.5;
+    for (let i = 0; i < 40; i++) {
+      const x = 12 + i * 34;
       const z = 0;
       let base = 0;
       for (let dx = -3; dx <= 3; dx += 1.5) {
