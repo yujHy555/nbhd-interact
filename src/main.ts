@@ -455,23 +455,23 @@ class App {
     const running = moveInput && (s.run || this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
     const maxSpeed = running ? 6.2 : 3.0;
 
-    // ---- Acceleration & crisp braking (locks to position on release) ----
-    // moveTowards gives a linear, predictable stop — no exponential drift.
+    // ---- Travelator: a real conveyor belt ----
+    // On the belt, the ground itself moves at `belt` m/s along +X. When the
+    // player gives no input, that IS their target velocity (idle → carried).
+    // Player input adds on top, so they can still walk/jump normally on it.
+    const belt = this.grounded ? this.world.travelatorSpeedAt(p.x, p.z, p.y) : 0;
+    const onBelt = belt > 0;
+
+    // ---- Acceleration & crisp braking ----
     const accel = this.grounded ? 30 : 10;
     const step = accel * dt;
-    const tx = moveInput ? dx * maxSpeed : 0;
+    const tx = moveInput ? dx * maxSpeed : belt; // input → normal control; idle → carried
     const tz = moveInput ? dz * maxSpeed : 0;
     v.x += Math.max(-step, Math.min(step, tx - v.x));
     v.z += Math.max(-step, Math.min(step, tz - v.z));
-    if (!moveInput) {
+    if (!moveInput && !onBelt) {
       if (Math.abs(v.x) < 0.02) v.x = 0;
       if (Math.abs(v.z) < 0.02) v.z = 0;
-    }
-
-    // ---- Travelator carry: conveyor pushes the player along +X ----
-    const belt = this.world.travelatorSpeedAt(p.x, p.z, p.y);
-    if (belt > 0 && this.grounded && s.axisX <= 0.05) {
-      v.x = Math.min(belt, v.x + belt * Math.min(1, dt * 4));
     }
 
     // ---- Double jump (coyote + input buffer) ----
@@ -555,6 +555,7 @@ class App {
     let state: AnimState;
     let dir: MoveDir = 'idle';
     if (!this.grounded) state = this.doubleJumpFx > 0 ? 'doubleJump' : (v.y > 0.6 ? 'jump' : 'fall');
+    else if (onBelt && !moveInput) state = 'idle'; // carried calmly by the belt
     else if (crouching) state = 'crouch';
     else if (planSpeed > idleThreshold) {
       const fx = Math.sin(this.facing), fz = Math.cos(this.facing); // model forward = (sinθ, cosθ)

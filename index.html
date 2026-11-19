@@ -68,6 +68,76 @@
     .card p { font-size: 0.88rem; margin: 0; opacity: 0.75; }
     .contact-mail { font-size: 1.4rem; color: var(--cyan); text-decoration: none; }
 
+    /* ===== AAA ZONE OVERLAYS ===== */
+    .zone-overlay { background: radial-gradient(ellipse at 50% 40%, rgba(8,22,32,0.62), rgba(4,10,16,0.9)); backdrop-filter: blur(14px) saturate(1.2); }
+    .zone-panel { position: relative; width: min(900px, 92vw); max-height: 88vh; overflow: hidden; padding: 44px 48px; border-radius: 4px;
+      background: linear-gradient(135deg, rgba(16,30,42,0.97), rgba(9,18,26,0.98));
+      border: 1px solid rgba(92,225,230,0.35);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 40px 120px rgba(0,0,0,0.7), inset 0 0 80px rgba(92,225,230,0.05);
+      clip-path: polygon(0 22px, 22px 0, calc(100% - 22px) 0, 100% 22px, 100% calc(100% - 22px), calc(100% - 22px) 100%, 22px 100%, 0 calc(100% - 22px));
+    }
+    /* Animated grid + glow backdrop INSIDE the panel */
+    .zone-panel::before { content: ''; position: absolute; inset: -50%; z-index: 0; pointer-events: none;
+      background-image: linear-gradient(rgba(92,225,230,0.09) 1px, transparent 1px), linear-gradient(90deg, rgba(92,225,230,0.09) 1px, transparent 1px);
+      background-size: 44px 44px; transform: perspective(500px) rotateX(55deg) translateY(0);
+      animation: gridflow 9s linear infinite; opacity: 0.55;
+      mask-image: linear-gradient(to bottom, transparent, black 30%, black 70%, transparent);
+    }
+    @keyframes gridflow { from { background-position: 0 0; } to { background-position: 0 44px; } }
+    .zone-panel::after { content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      background: radial-gradient(circle at 78% 18%, rgba(92,225,230,0.16), transparent 42%),
+                  radial-gradient(circle at 18% 84%, rgba(255,127,184,0.10), transparent 44%);
+      animation: zonePulse 6s ease-in-out infinite alternate;
+    }
+    @keyframes zonePulse { from { opacity: 0.55; } to { opacity: 1; } }
+    .zone-content { position: relative; z-index: 2; }
+    /* Corner brackets */
+    .zone-corner { position: absolute; z-index: 3; width: 26px; height: 26px; border-color: var(--cyan); border-style: solid; opacity: 0.8; }
+    .zone-corner.tl { top: 10px; left: 10px; border-width: 2px 0 0 2px; }
+    .zone-corner.tr { top: 10px; right: 10px; border-width: 2px 2px 0 0; }
+    .zone-corner.bl { bottom: 10px; left: 10px; border-width: 0 0 2px 2px; }
+    .zone-corner.br { bottom: 10px; right: 10px; border-width: 0 2px 2px 0; }
+    /* Scanline sweep */
+    .zone-scan { position: absolute; left: 0; right: 0; height: 2px; z-index: 3; pointer-events: none;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent); opacity: 0.5;
+      animation: scanSweep 4.5s linear infinite; }
+    @keyframes scanSweep { from { top: 0; } to { top: 100%; } }
+    /* Entrance / exit transitions */
+    .zone-overlay { opacity: 0; transition: opacity 0.45s cubic-bezier(0.22,1,0.36,1); }
+    .zone-overlay.visible { opacity: 1; }
+    .zone-overlay .zone-panel { transform: translateY(34px) scale(0.965); opacity: 0; filter: blur(6px);
+      transition: transform 0.6s cubic-bezier(0.16,1,0.3,1), opacity 0.5s ease, filter 0.6s ease; }
+    .zone-overlay.visible .zone-panel { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
+    .zone-overlay.leaving { opacity: 0; }
+    .zone-overlay.leaving .zone-panel { transform: translateY(-20px) scale(1.02); opacity: 0; filter: blur(5px); }
+    /* Staggered content reveal */
+    .zone-content > * { opacity: 0; transform: translateY(18px); }
+    .zone-overlay.visible .zone-content > * { animation: zoneReveal 0.6s cubic-bezier(0.16,1,0.3,1) forwards; }
+    .zone-overlay.visible .zone-content > *:nth-child(1) { animation-delay: 0.10s; }
+    .zone-overlay.visible .zone-content > *:nth-child(2) { animation-delay: 0.18s; }
+    .zone-overlay.visible .zone-content > *:nth-child(3) { animation-delay: 0.26s; }
+    .zone-overlay.visible .zone-content > *:nth-child(4) { animation-delay: 0.34s; }
+    .zone-overlay.visible .zone-content > *:nth-child(5) { animation-delay: 0.42s; }
+    @keyframes zoneReveal { to { opacity: 1; transform: translateY(0); } }
+    /* Feature cards — hover lift + animated top bar */
+    .zone-panel .card { position: relative; overflow: hidden; background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(92,225,230,0.18); transition: transform 0.25s, border-color 0.25s, background 0.25s; }
+    .zone-panel .card:hover { transform: translateY(-5px); border-color: var(--cyan); background: rgba(92,225,230,0.09); }
+    .zone-panel .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--cyan), var(--pink)); transform: scaleX(0); transform-origin: left;
+      transition: transform 0.35s; }
+    .zone-panel .card:hover::before { transform: scaleX(1); }
+    .zone-index { font: 800 0.66rem/1 ui-monospace, monospace; color: var(--cyan); opacity: 0.7; margin-bottom: 4px; }
+    .zone-hudbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .zone-tag { font: 700 0.62rem/1 ui-monospace, monospace; letter-spacing: 0.18em; color: var(--cyan);
+      border: 1px solid rgba(92,225,230,0.4); border-radius: 4px; padding: 6px 10px; text-transform: uppercase; }
+    .zone-live { display: inline-flex; align-items: center; gap: 7px; font: 700 0.62rem/1 ui-monospace, monospace; letter-spacing: 0.16em; opacity: 0.65; }
+    .zone-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 10px var(--pink); animation: liveBlink 1.4s infinite; }
+    @keyframes liveBlink { 50% { opacity: 0.25; } }
+    .zone-mail { display: inline-block; margin: 10px 0; font: 800 1.5rem/1 ui-monospace, monospace; color: var(--cyan); text-decoration: none;
+      border-bottom: 1px solid rgba(92,225,230,0.5); padding-bottom: 4px; transition: text-shadow 0.25s; }
+    .zone-mail:hover { text-shadow: 0 0 18px var(--cyan); }
+
     /* Right-hand HUD stack — keeps FPS and map clear of the top bar */
     #hud-right { position: absolute; bottom: 20px; right: 24px; z-index: 12; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
     #minimap { width: 244px; height: 152px; border-radius: 12px; border: 1px solid rgba(92,225,230,0.38); background: rgba(9,17,23,0.82); backdrop-filter: blur(8px); box-shadow: 0 10px 32px rgba(0,0,0,0.45); }
@@ -224,28 +294,38 @@
   </div>
 
   <!-- What We Do -->
-  <div id="whatwedo" class="overlay">
-    <div class="panel">
-      <div class="eyebrow">Zone 02</div>
-      <h2>What we do</h2>
-      <p>We make interactive experiences that blur the line between a website and a world — built in real time, engineered for the browser.</p>
-      <div class="feature-grid">
-        <div class="card"><h3>Real-time 3D</h3><p>Babylon.js worlds with physically based materials, HDRI lighting and cinematic cameras.</p></div>
-        <div class="card"><h3>Playable Interfaces</h3><p>Landing pages that are games — exploration, customization and story in one continuous space.</p></div>
-        <div class="card"><h3>WebGL Engineering</h3><p>Performance-first rendering, procedural systems and asset pipelines built for scale.</p></div>
+  <div id="whatwedo" class="overlay zone-overlay">
+    <div class="zone-panel">
+      <span class="zone-corner tl"></span><span class="zone-corner tr"></span><span class="zone-corner bl"></span><span class="zone-corner br"></span>
+      <div class="zone-scan"></div>
+      <div class="zone-content">
+        <div class="zone-hudbar"><span class="zone-tag">ZONE 02 / CAPABILITIES</span><span class="zone-live"><i></i> LIVE FEED</span></div>
+        <div class="zone-index">// 02 — WHAT WE DO</div>
+        <h2>What we do</h2>
+        <p>We make interactive experiences that blur the line between a website and a world — built in real time, engineered for the browser.</p>
+        <div class="feature-grid">
+          <div class="card"><div class="zone-index">01</div><h3>Real-time 3D</h3><p>Babylon.js worlds with physically based materials, HDRI lighting and cinematic cameras.</p></div>
+          <div class="card"><div class="zone-index">02</div><h3>Playable Interfaces</h3><p>Landing pages that are games — exploration, customization and story in one continuous space.</p></div>
+          <div class="card"><div class="zone-index">03</div><h3>WebGL Engineering</h3><p>Performance-first rendering, procedural systems and asset pipelines built for scale.</p></div>
+        </div>
+        <div class="row"><button class="btn ghost" id="btn-wwd-close">Keep Exploring →</button></div>
       </div>
-      <div class="row"><button class="btn ghost" id="btn-wwd-close">Keep Exploring →</button></div>
     </div>
   </div>
 
   <!-- Contact -->
-  <div id="contact" class="overlay">
-    <div class="panel">
-      <div class="eyebrow">Zone 03</div>
-      <h2>Let's build something.</h2>
-      <p>Got an idea that deserves a world of its own? We'd love to hear it.</p>
-      <p><a class="contact-mail" href="mailto:hello@nbhdinteract.com">hello@nbhdinteract.com</a></p>
-      <div class="row"><button class="btn ghost" id="btn-contact-close">← Back to the Neighbourhood</button></div>
+  <div id="contact" class="overlay zone-overlay">
+    <div class="zone-panel">
+      <span class="zone-corner tl"></span><span class="zone-corner tr"></span><span class="zone-corner bl"></span><span class="zone-corner br"></span>
+      <div class="zone-scan"></div>
+      <div class="zone-content">
+        <div class="zone-hudbar"><span class="zone-tag">ZONE 03 / CONTACT</span><span class="zone-live"><i></i> OPEN FOR WORK</span></div>
+        <div class="zone-index">// 03 — GET IN TOUCH</div>
+        <h2>Let's build something.</h2>
+        <p>Got an idea that deserves a world of its own? We'd love to hear it.</p>
+        <a class="zone-mail" href="mailto:hello@nbhdinteract.com">hello@nbhdinteract.com</a>
+        <div class="row"><button class="btn ghost" id="btn-contact-close">← Back to the Neighbourhood</button></div>
+      </div>
     </div>
   </div>
 

@@ -21,21 +21,19 @@ export class Environment {
     this.scene = scene;
     this.root = new BABYLON.TransformNode('environmentRoot', scene);
 
-    // ---- Blue Desert equirectangular panorama: IBL + visible background ----
-    // A 2:1 LDR panorama converted into a cubemap by Babylon. One instance
-    // lights the PBR materials, a second drives the skybox at its own level.
-    const skyUrl = '/hdri/blue_desert/textures/Scene_-_Root_diffuse.jpeg';
-    // IBL needs only moderate detail; the visible skybox uses a large cube
-    // so the 4096×2048 source panorama stays crisp on screen.
-    this.envTexture = new BABYLON.EquiRectangularCubeTexture(skyUrl, scene, 512, false, false);
+    // ---- HDRI lighting test: original vintage measuring lab HDR ----
+    // A true linear .hdr gives far more luminance range than the LDR JPEG,
+    // so direct-sun shadows read with much stronger contrast.
+    const hdrUrl = '/hdri/vintage_measuring_lab_2k.hdr';
+    this.envTexture = new BABYLON.HDRCubeTexture(hdrUrl, scene, 256);
+    this.envTexture.gammaSpace = false;
     scene.environmentTexture = this.envTexture as any;
-    scene.environmentIntensity = 0.92; // bright, natural ambient
-    scene.ambientColor = new BABYLON.Color3(0.10, 0.12, 0.16);
+    scene.environmentIntensity = 0.75; // lower ambient → shadows stand out
+    scene.ambientColor = new BABYLON.Color3(0.08, 0.09, 0.11);
 
-    // Visible background: the full 4096×2048 panorama mapped directly onto a
-    // sphere (no cubemap stretching). Rotate the sphere 180° so the painted
-    // sky sits above the horizon — mesh-level flip, no UV hacks.
-    const skyTex = new BABYLON.Texture(skyUrl, scene);
+    // Visible background: the full 4096×2048 blue-desert panorama mapped
+    // directly onto a sphere, independent of the HDR lighting IBL.
+    const skyTex = new BABYLON.Texture('/hdri/blue_desert/textures/Scene_-_Root_diffuse.jpeg', scene);
     skyTex.level = 1.35;
     skyTex.anisotropicFilteringLevel = 8;
     const sky = BABYLON.MeshBuilder.CreateSphere('skyBox', { diameter: 1800, segments: 64 }, scene);

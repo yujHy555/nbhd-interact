@@ -61,12 +61,12 @@ export class Polish {
     // ---- Cinematic accent lights ----
     this.rim = new BABYLON.PointLight('rimLight', new BABYLON.Vector3(0, 5, 8), scene);
     this.rim.diffuse = new BABYLON.Color3(0.4, 0.85, 1.0);
-    this.rim.intensity = 1.4;
-    this.rim.range = 22;
+    this.rim.intensity = 0.35; // subtle accent — strong rim light cancels shadows
+    this.rim.range = 12;
     this.fill = new BABYLON.HemisphericLight('fillLight', new BABYLON.Vector3(-0.4, 0.6, 0.3), scene);
     this.fill.diffuse = new BABYLON.Color3(0.5, 0.65, 0.9);
     this.fill.groundColor = new BABYLON.Color3(0.12, 0.1, 0.08);
-    this.fill.intensity = 0.28;
+    this.fill.intensity = 0.10; // gentle fill — preserves shadow contrast
 
     // Real cast shadows are handled by Environment's ShadowGenerator —
     // the skinned hero mesh is registered as a caster. No fake blob shadow.

@@ -18,28 +18,21 @@ uniform float amount;      // 0 = full res, 1 = full pixel art
 uniform float palette;     // number of colour buckets
 uniform float dither;
 void main(void) {
-  // When inactive, pass through untouched (no colour quantisation at all).
-  if (amount < 0.01) {
-    gl_FragColor = texture2D(textureSampler, vUV);
-    return;
-  }
-  // Big chunky pixels (reference style ≈ 3-6 screen px blocks)
+  // Chunky pixel blocks — one floor + one texture fetch (AAA-cheap path).
   float block = mix(1.0, 5.0, amount);
   vec2 texel = block / resolution;
-  vec2 uv = (floor(vUV / texel) + 0.5) * texel;
+  vec2 cell = floor(vUV / texel);
+  vec2 uv = (cell + 0.5) * texel;
   vec3 c = texture2D(textureSampler, uv).rgb;
 
-  // Ordered Bayer-style dither for the retro look
-  vec2 p = floor(vUV / texel);
-  float bayer = fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-  c += (bayer - 0.5) * dither * amount;
+  // Cheap 4x4 ordered dither (no sin/hash — integer arithmetic only).
+  vec2 p = mod(cell, 4.0);
+  float bayer = (mod(p.x, 2.0) + mod(p.y, 2.0) * 2.0) * 0.25;
+  c += (bayer - 0.375) * dither * amount;
 
-  // Colour quantisation — limited palette
+  // Colour quantisation to a limited retro palette + warm desert shift.
   c = floor(c * palette + 0.5) / palette;
-
-  // Slight warm shift toward the reference's sun-baked palette
-  c.r *= 1.04; c.g *= 1.01; c.b *= 0.96;
-
+  c *= vec3(1.04, 1.01, 0.96);
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -61,6 +54,7 @@ export class PixelPortal {
   private veilMat!: BABYLON.StandardMaterial;
   private prevX = 0;
   private isPixel = false;
+  private ppAttached = false;
   private onModeChange?: (pixel: boolean) => void;
   private static readonly PORTAL_X = 192;
   private static readonly OPEN_Z = 2.0; // half-width of the walkable opening
@@ -71,7 +65,9 @@ export class PixelPortal {
     this.onModeChange = onModeChange;
     this.root = new BABYLON.TransformNode('pixelPortal', scene);
     this.pixelPP = new BABYLON.PostProcess('pixelate', 'pixelate',
-      ['resolution', 'amount', 'palette', 'dither'], null, 1.0, camera);
+      ['resolution', 'amount', 'palette', 'dither'], null, 1.0, camera, BABYLON.Texture.NEAREST_SAMPLINGMODE);
+    // Zero-cost when inactive: detach the pass entirely, reattach on entry.
+    camera.detachPostProcess(this.pixelPP);
     this.pixelPP.onApply = (effect) => {
       effect.setFloat2('resolution', scene.getEngine().getRenderWidth(), scene.getEngine().getRenderHeight());
       effect.setFloat('amount', this.amount);
@@ -159,8 +155,17 @@ export class PixelPortal {
     this.glowMat.emissiveColor = BABYLON.Color3.FromHexString('#00e5ff').scale(0.7 + Math.sin(t * 4) * 0.35);
     this.arch.rotation.z = Math.PI / 2 + Math.sin(t * 0.8) * 0.02;
 
-    // Transition the pixelation amount smoothly
+    // Transition the pixelation amount smoothly. Attach/detach the pass so it
+    // costs nothing in standard mode, and use NEAREST sampling for crisp pixels.
     this.amount += (this.targetAmount - this.amount) * Math.min(1, dt * 2.5);
+    const needPP = this.amount > 0.001;
+    if (needPP && !this.ppAttached) {
+      this.camera.attachPostProcess(this.pixelPP, 0);
+      this.ppAttached = true;
+    } else if (!needPP && this.ppAttached) {
+      this.camera.detachPostProcess(this.pixelPP);
+      this.ppAttached = false;
+    }
 
     const X = PixelPortal.PORTAL_X, Z = 0;
     const inOpening = Math.abs(player.z - Z) < PixelPortal.OPEN_Z;
