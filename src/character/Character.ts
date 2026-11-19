@@ -79,6 +79,7 @@ export class Character {
   private eyeMat!: BABYLON.StandardMaterial;
   private pupilMat!: BABYLON.StandardMaterial;
   private meshes: BABYLON.Mesh[] = [];
+  private footOffset = 0.13; // ankle bone → sole distance, calibrated at bind time
 
   constructor(scene: BABYLON.Scene) {
     this.scene = scene;
@@ -257,6 +258,17 @@ export class Character {
       binding.root.position.y -= (low - rootY); // feet now at root.y (local 0)
       binding.root.computeWorldMatrix(true);
       for (const m of meshes) m.computeWorldMatrix(true);
+      // Calibrate ankle-bone → sole offset from the seated rest pose so the
+      // per-frame foot contact check can use the ACTUAL animated foot bones.
+      const skinned = meshes.find((m) => (m as BABYLON.Mesh).skeleton) as BABYLON.Mesh | undefined;
+      if (skinned && skinned.skeleton) {
+        let ankle = Infinity;
+        for (const boneName of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
+          const b = skinned.skeleton.bones.find((x) => x.name === boneName);
+          if (b) ankle = Math.min(ankle, BABYLON.Vector3.TransformCoordinates(b.getAbsolutePosition(), skinned.getWorldMatrix()).y);
+        }
+        if (isFinite(ankle)) this.footOffset = Math.max(0.02, ankle - this.root.getAbsolutePosition().y);
+      }
     }
     // Hide procedural mesh while the mocap character is bound
     for (const m of this.meshes) m.setEnabled(false);
@@ -435,14 +447,24 @@ export class Character {
     // the root lift below. Tilting the whole body looks like falling over.
     this.slopePivot.rotation.z = 0;
     if (!this.mixamo) return;
-    let low = Infinity;
+    // Measure the real animated ankle bones (the skinned mesh's bounding box
+    // is bind-pose only and does not follow the walk cycle).
+    let sole = Infinity;
     for (const m of this.mixamo.root.getChildMeshes(false)) {
+      const sk = (m as BABYLON.Mesh).skeleton;
+      if (!sk) continue;
       m.computeWorldMatrix(true);
-      low = Math.min(low, m.getBoundingInfo().boundingBox.minimumWorld.y);
+      for (const boneName of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
+        const b = sk.bones.find((x) => x.name === boneName);
+        if (!b) continue;
+        const y = BABYLON.Vector3.TransformCoordinates(b.getAbsolutePosition(), m.getWorldMatrix()).y;
+        sole = Math.min(sole, y - this.footOffset);
+      }
     }
-    const deficit = surfaceY - low;
-    // +1.5 cm safety so animated toes never dip below the inclined plane.
-    if (deficit > 0 && deficit < 0.5) this.root.position.y += deficit + 0.015;
+    if (!isFinite(sole)) return;
+    const deficit = surfaceY - sole;
+    // +1 cm safety so animated toes never dip below the inclined plane.
+    if (deficit > -0.12 && deficit < 0.5) this.root.position.y += deficit + 0.01;
   }
 
   /** Set the flip rotation about the waist (radians). */
