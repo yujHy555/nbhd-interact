@@ -127,16 +127,12 @@ export class SciFiCity {
     for (const m of meshes) m.dispose(false, false);
     if (res.transformNodes) for (const n of res.transformNodes) n.dispose(false, false);
 
-    // Building placements.
+    // Just TWO sci-fi buildings in the whole level, pulled closer in Z so
+    // they read in the background without crowding the play strip (z≈0).
     const spots: { x: number; z: number; s: number }[] = [
-      { x: 60, z: 58, s: 1.0 }, { x: 90, z: 56, s: 1.4 }, { x: 130, z: 48, s: 1.1 },
-      { x: 180, z: 60, s: 1.6 }, { x: 240, z: 50, s: 1.2 }, { x: 310, z: 62, s: 1.5 },
-      { x: 390, z: 52, s: 1.3 }, { x: 470, z: 64, s: 1.7 }, { x: 560, z: 54, s: 1.4 },
-      { x: 660, z: 66, s: 1.8 }, { x: 760, z: 56, s: 1.5 },
+      { x: 70, z: 30, s: 1.5 },
+      { x: 400, z: 36, s: 1.8 },
     ];
-    for (let x = 820, i = 0; x <= 2280; x += 70, i++) {
-      spots.push({ x, z: 50 + (i % 4) * 6, s: 1.2 + (i % 3) * 0.3 });
-    }
 
     // Dense exact heightfield per building: 10x10 cells, top from real ray hits.
     const N = 10;

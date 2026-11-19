@@ -63,7 +63,7 @@ export class Environment {
     this.sun.diffuse = new BABYLON.Color3(1.0, 0.96, 0.88);
     this.sun.specular = new BABYLON.Color3(1, 0.98, 0.92);
     // High-res PCF: soft-edged but never blocky or pixelated.
-    this.shadowGen = new BABYLON.ShadowGenerator(4096, this.sun);
+    this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
     this.shadowGen.usePercentageCloserFiltering = true;
     this.shadowGen.filteringQuality = BABYLON.ShadowGenerator.QUALITY_HIGH;
     this.shadowGen.setDarkness(0.12);     // slightly softer than before

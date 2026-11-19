@@ -263,6 +263,15 @@ export class Character {
       binding.root.position.y -= (low - rootY); // feet now at root.y (local 0)
       binding.root.computeWorldMatrix(true);
       for (const m of meshes) m.computeWorldMatrix(true);
+      // The GLB's stale bind-pose bounds are ~72 m wide (cm-scale leftovers),
+      // which makes the hero cast a giant shadow and never get culled. Clamp
+      // to a correct character-sized box each mesh so shadows/frustum are sane.
+      for (const m of meshes) {
+        m.setBoundingInfo(new BABYLON.BoundingInfo(
+          new BABYLON.Vector3(-1.1, 0, -1.1),
+          new BABYLON.Vector3(1.1, 2.0, 1.1),
+        ));
+      }
       // Calibrate ankle → sole distance for the slope foot-contact check.
       const skinned = meshes.find((m) => (m as BABYLON.Mesh).skeleton) as BABYLON.Mesh | undefined;
       if (skinned && skinned.skeleton) {
