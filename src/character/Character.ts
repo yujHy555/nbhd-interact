@@ -92,6 +92,10 @@ export class Character {
     this.flipPivot = new BABYLON.TransformNode('characterFlipPivot', scene);
     this.flipPivot.parent = this.headingPivot;
     this.flipPivot.position.y = 0.96; // waist / centre of mass
+    // Run IK AFTER the Mixamo animation is evaluated so it can't be overwritten.
+    scene.onAfterAnimationsObservable.add(() => {
+      if (this.mixamo) this.applyFootIK(this.scene.getEngine().getDeltaTime() / 1000);
+    });
     this.buildMaterials();
     this.buildRig();
     // The procedural rig is only a fallback. Hide it from the very first
@@ -435,32 +439,65 @@ export class Character {
     this.secondary = Math.sin(this.t * 1.5) * 0.01;
   }
 
-  /** Tilt the whole body to match the slope underfoot (radians).
-   *  Applied above the yaw pivot so it is a true world-space tilt. */
-  public setSlopeAngle(angle: number) { this.slopePivot.rotation.z = -angle; }
+  /** Slope alignment target (radians), consumed in the post-animation IK pass. */
+  public setSlopeAngle(angle: number) { this.targetSlope = angle; }
+  private targetSlope = 0;
+  private smoothSlope = 0;
+  /** Surface height sampler supplied by the game (foot XZ → ground Y). */
+  public groundSampler: ((x: number, z: number) => number) | null = null;
 
-  /** Keep the body upright and plant the shoes on an inclined surface by
-   *  measuring the real animated ankle bones and lifting the root by the exact
-   *  penetration. No bone rotation (that pitched the whole rig) and no per-frame
-   *  work on flat ground (that caused run jitter). */
-  public alignToSlope(angle: number, surfaceY: number) {
-    this.slopePivot.rotation.z = 0; // torso always upright
-    if (!this.mixamo || Math.abs(angle) < 0.02) return;
-    let sole = Infinity;
-    for (const m of this.mixamo.root.getChildMeshes(false)) {
-      const sk = (m as BABYLON.Mesh).skeleton;
+  /** IK-style foot pinning. Runs AFTER the animation each frame so the Mixamo
+   *  clip can't overwrite it. For each foot we sample the real ground beneath
+   *  it, then (a) rotate the foot bone to match the slope and (b) nudge the
+   *  root so the lowest sole never sinks below that surface. The body itself
+   *  stays upright — no whole-rig tilt, so no "falling forward" look. */
+  public applyFootIK(dt: number) {
+    if (!this.mixamo || !this.groundSampler) return;
+    // Smooth the slope so stepping onto/off the ramp never snaps or jitters.
+    this.smoothSlope += (this.targetSlope - this.smoothSlope) * Math.min(1, dt * 8);
+    const slope = this.smoothSlope;
+    const upright = Math.abs(slope) < 0.01;
+
+    // Foot pitch about the lateral axis. When facing +X (heading π/2) the
+    // lateral axis is world Z; a ramp rising along +X needs a +Z rotation.
+    const pitchQ = upright ? null : BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Z, slope);
+
+    let lowestSole = Infinity;
+    for (const mesh of this.mixamo.root.getChildMeshes(false)) {
+      const sk = (mesh as BABYLON.Mesh).skeleton;
       if (!sk) continue;
-      m.computeWorldMatrix(true);
-      for (const n of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
-        const b = sk.bones.find((x) => x.name === n);
-        if (!b) continue;
-        const y = BABYLON.Vector3.TransformCoordinates(b.getAbsolutePosition(), m.getWorldMatrix()).y;
-        sole = Math.min(sole, y - this.footOffset);
+      mesh.computeWorldMatrix(true);
+      sk.computeAbsoluteMatrices();
+      for (const name of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
+        const bone = sk.bones.find((b) => b.name === name);
+        if (!bone) continue;
+        // Match the foot's rotation to the slope (world-space pitch applied
+        // after the clip, in the bone's parent space so it is stable).
+        if (pitchQ && bone.rotationQuaternion) {
+          const parent = bone.getParent();
+          const pq = parent ? BABYLON.Quaternion.FromRotationMatrix(parent.getAbsoluteMatrix()) : BABYLON.Quaternion.Identity();
+          const localPitch = BABYLON.Quaternion.Inverse(pq).multiply(pitchQ).multiply(pq);
+          bone.rotationQuaternion = localPitch.multiply(bone.rotationQuaternion);
+        }
+        // Recompute after the pitch adjustment and measure the sole height.
+        sk.computeAbsoluteMatrices();
+        const wp = BABYLON.Vector3.TransformCoordinates(bone.getAbsolutePosition(), mesh.getWorldMatrix());
+        const ground = this.groundSampler(wp.x, wp.z);
+        const sole = wp.y - this.footOffset;
+        lowestSole = Math.min(lowestSole, sole - ground);
       }
     }
-    if (!isFinite(sole)) return;
-    const penetration = surfaceY - sole;
-    if (penetration > 0 && penetration < 0.3) this.root.position.y += Math.min(penetration, 0.12) + 0.008;
+    // Pin the lowest sole to ~1.5 cm above the sampled surface. Correct the
+    // full error immediately (true IK constraint) so the shoe never sinks,
+    // even mid-stride. The controller resets the root each frame, so there is
+    // no accumulation — and on flat ground the error is tiny → no jitter.
+    // Only apply the hard constraint on non-flat ground. On flat ground the
+    // Mixamo clip is already authored with the feet on the floor; pinning the
+    // lowest foot there fights the natural bob and causes run jitter.
+    if (isFinite(lowestSole) && Math.abs(this.smoothSlope) > 0.02) {
+      const err = 0.015 - lowestSole;
+      this.root.position.y += Math.max(-0.25, Math.min(0.25, err));
+    }
   }
 
   /** Set the flip rotation about the waist (radians). */

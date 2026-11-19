@@ -60,13 +60,18 @@ export class Environment {
     this.sun.specular = new BABYLON.Color3(1, 0.98, 0.92);
     this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
     this.shadowGen.useBlurExponentialShadowMap = true;
-    this.shadowGen.blurKernel = 24;
-    this.shadowGen.darkness = 0.12; // strong, natural, always visible
-    this.shadowGen.bias = 0.001;
-    this.shadowGen.normalBias = 0.02;
-    this.sun.autoUpdateExtends = true;
+    this.shadowGen.blurKernel = 16;
+    this.shadowGen.darkness = 0.08; // deep, clearly visible shadows
+    this.shadowGen.bias = 0.0005;
+    this.shadowGen.normalBias = 0.01;
+    // Tight, fixed-size shadow volume around the player — follows the camera
+    // focus each frame (see focusSun). autoUpdateExtends with a level-long
+    // caster list made the map so coarse that contact shadows vanished.
+    this.sun.autoUpdateExtends = false;
+    this.sun.orthoLeft = -26; this.sun.orthoRight = 26;
+    this.sun.orthoTop = 26; this.sun.orthoBottom = -26;
     this.sun.shadowMinZ = 1;
-    this.sun.shadowMaxZ = 320;
+    this.sun.shadowMaxZ = 160;
 
     // ---- Fill light ----
     this.hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
@@ -107,6 +112,13 @@ export class Environment {
   }
 
   public registerShadowCaster(mesh: BABYLON.AbstractMesh) { this.shadowGen.addShadowCaster(mesh, true); }
+
+  /** Keep the sun's shadow volume centred on the action so contact shadows
+   *  stay crisp and visible at every point in the level. */
+  public focusSun(target: BABYLON.Vector3) {
+    this.sun.position.set(target.x + 42, target.y + 60, target.z - 30);
+    this.sun.direction.set(-0.55, -1, 0.35);
+  }
 
   /** Equirectangular canvas → cube texture used as IBL + sky. */
   private createProceduralEnv(): BABYLON.BaseTexture {

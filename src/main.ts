@@ -99,6 +99,17 @@ class App {
     if (mapCanvas) this.minimap = new Minimap(mapCanvas, this.world);
 
     this.character = new Character(this.scene);
+    // Foot IK samples the exact surface under each shoe — including the
+    // analytic ramp plane, so the foot pin is precise even while climbing.
+    this.character.groundSampler = (x, z) => {
+      let h = this.surfaceAt(x, z, this.ppos.y + 0.6);
+      for (const s of this.world.slopes) {
+        if (x >= s.x - s.w / 2 && x <= s.x + s.w / 2 && z >= s.z - s.d / 2 && z <= s.z + s.d / 2) {
+          h = Math.max(h, this.slopeHeight(s, x));
+        }
+      }
+      return h;
+    };
     // Face screen-right from the very first frame (idle at start)
     this.character.headingPivot.rotation.y = Math.PI / 2;
     this.mixamo = new MixamoController(this.scene);
@@ -533,7 +544,7 @@ class App {
 
     this.character.setState(state, v.y, dir);
     this.character.update(dt, planSpeed, this.facing);
-    this.character.alignToSlope(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0, p.y);
+    this.character.setSlopeAngle(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0);
     this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), !this.grounded, state);
   }
 
@@ -559,6 +570,7 @@ class App {
       }
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
+    this.env.focusSun(pp);
     this.drone.update(dt, pp);
     this.polish.update(dt, pp, pp.y, this.mode === 'explore' && this.pvel.length() > 0.5);
     this.minimap?.update(pp.x, pp.z, this.mode === 'welcome' ? Math.PI / 2 : this.facing);
