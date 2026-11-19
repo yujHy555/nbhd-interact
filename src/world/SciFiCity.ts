@@ -60,6 +60,11 @@ export class SciFiCity {
       this.sources.push(bakedMesh);
     }
 
+    // Dispose the original imported GLB meshes — they sit at the world origin
+    // and would otherwise appear as a stray building over the start travelator.
+    for (const m of meshes) m.dispose(false, false);
+    if (res.transformNodes) for (const n of res.transformNodes) n.dispose(false, false);
+
     // Building placements — deep background (large +Z), along the level.
     // Deep background — pushed well back in +Z so they never crowd the
     // travelators/road in the foreground play strip (z ≈ 0).
