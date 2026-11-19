@@ -51,7 +51,7 @@ export class Minimap {
     const colors = ['rgba(92,225,230,0.10)', 'rgba(255,200,87,0.10)', 'rgba(255,127,184,0.10)'];
     zones.forEach((z, i) => {
       const x0 = this.px(z.x - 4, playerX);
-      const x1 = this.px(i + 1 < zones.length ? zones[i + 1].x - 4 : 1450, playerX);
+      const x1 = this.px(i + 1 < zones.length ? zones[i + 1].x - 4 : 2300, playerX);
       if (x1 < 0 || x0 > W) return;
       c.fillStyle = colors[i % colors.length];
       c.fillRect(x0, 0, Math.max(2, x1 - x0), H);

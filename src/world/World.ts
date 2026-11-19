@@ -29,6 +29,10 @@ export class World {
     { x: 1090, name: 'COSMOS' },
     { x: 1240, name: 'INFINITY' },
     { x: 1400, name: 'APEX' },
+    { x: 1580, name: 'OBSIDIAN' },
+    { x: 1780, name: 'NEBULA' },
+    { x: 2000, name: 'ZENITH' },
+    { x: 2240, name: 'ETERNITY' },
   ];
   private scene: BABYLON.Scene;
   private mats: Materials;
@@ -261,7 +265,7 @@ export class World {
     const farColors: [number, number, number][] = [
       [0.3, 0.9, 0.85], [0.75, 0.45, 0.95], [0.95, 0.62, 0.35], [0.45, 0.8, 0.95],
     ];
-    for (let x = 320, i = 0; x <= 1440; x += 22, i++) {
+    for (let x = 320, i = 0; x <= 2280; x += 22, i++) {
       const h = 1.0 + ((i * 7) % 5) * 0.45;
       this.addPlatform(x, h - 0.5, 0, 7 + (i % 3), 1, 5, farColors[i % farColors.length]);
       // occasional higher perch
@@ -273,8 +277,8 @@ export class World {
     // highest nearby surface so they NEVER intersect anything.
     this.initToonShader();
 
-    for (let i = 0; i < 40; i++) {
-      const x = 12 + i * 34;
+    for (let i = 0; i < 60; i++) {
+      const x = 12 + i * 38;
       const z = 0;
       let base = 0;
       for (let dx = -3; dx <= 3; dx += 1.5) {
