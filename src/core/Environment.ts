@@ -101,7 +101,7 @@ export class Environment {
     this.buildMacbethChart();
   }
 
-  public registerShadowCaster(mesh: BABYLON.Mesh) { this.shadowGen.addShadowCaster(mesh, true); }
+  public registerShadowCaster(mesh: BABYLON.AbstractMesh) { this.shadowGen.addShadowCaster(mesh, true); }
 
   /** Equirectangular canvas → cube texture used as IBL + sky. */
   private createProceduralEnv(): BABYLON.BaseTexture {

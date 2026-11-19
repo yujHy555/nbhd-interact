@@ -99,6 +99,7 @@ class App {
     });
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.enableShadowReceivers();
+    this.loadCows();
 
     this.input = new Input();
     this.camera = new CameraRig(this.scene, this.canvas);
@@ -154,6 +155,38 @@ class App {
       box.position.set(c.x, c.y, c.z);
       box.material = mat;
       this.debugMeshes.push(box);
+    }
+  }
+
+  /** Background Holstein cows — a small herd placed deep in the level so they
+   *  frame the side-scrolling route without ever blocking the player. */
+  private async loadCows() {
+    try {
+      const res = await BABYLON.SceneLoader.ImportMeshAsync('', '/models/cow/', 'cow.glb', this.scene);
+      const source = res.meshes.find((m) => m instanceof BABYLON.Mesh && m.getTotalVertices() > 0) as BABYLON.Mesh | undefined;
+      if (!source) return;
+
+      // The source is 1 m long (Y-up, head toward +X). Scale to a real cow:
+      // ~2.4 m long / ~1.5 m tall / ~0.7 m wide.
+      const scale = 2.4;
+      const feetOffset = -source.getBoundingInfo().boundingBox.minimum.y * scale;
+      const spots = [
+        { x: 15, z: 11, face: 0 }, { x: 41, z: 14, face: Math.PI },
+        { x: 82, z: 12, face: 0 }, { x: 124, z: 15, face: Math.PI },
+        { x: 168, z: 11, face: 0 },
+      ];
+      source.setEnabled(false); // hide the import origin; instances are the herd
+      spots.forEach((s, i) => {
+        const cow = source.createInstance(`cow${i}`);
+        cow.position.set(s.x, feetOffset, s.z);
+        cow.scaling.setAll(scale);
+        cow.rotation.y = s.face;
+        cow.isPickable = false;
+        cow.receiveShadows = true;
+        this.env.registerShadowCaster(cow);
+      });
+    } catch (e) {
+      console.warn('[Cow] background herd failed to load:', e);
     }
   }
 
