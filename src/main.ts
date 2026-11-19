@@ -30,7 +30,7 @@ class App {
   private world!: World;
   private ui!: UI;
   private mode: Mode = 'welcome';
-  private facing = -Math.PI / 2; // screen-right (+X) at start
+  private facing = Math.PI / 2; // screen-right (+X) at start
   private lastTime = 0;
   private fpsAcc = 0; private fpsFrames = 0;
   private pickupCount = 0;
@@ -87,7 +87,7 @@ class App {
 
     this.character = new Character(this.scene);
     // Face screen-right from the very first frame (idle at start)
-    this.character.root.rotation.y = -Math.PI / 2;
+    this.character.root.rotation.y = Math.PI / 2;
     this.mixamo = new MixamoController(this.scene);
     this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
       if (ok) {
@@ -211,8 +211,8 @@ class App {
     this.ppos.set(2.4, 0, 0);
     this.pvel.set(0, 0, 0);
     this.grounded = true;
-    this.facing = -Math.PI / 2;
-    this.character.root.rotation.y = -Math.PI / 2;
+    this.facing = Math.PI / 2;
+    this.character.root.rotation.y = Math.PI / 2;
     this.camera.snap(new BABYLON.Vector3(2.4, 1, 0));
   }
 
@@ -329,10 +329,10 @@ class App {
     this.character.setPosition(p.x, p.y, p.z);
 
     // ---- Facing ----
-    // The Mixamo rig faces -Z at rotation 0 (verified from its arm bones:
-    // at yaw -90° the rig's forward is +X). atan2(-dx,-dz) therefore points
-    // her exactly along the desired camera-relative travel direction.
-    if (moveInput) this.facing = Math.atan2(-dx, -dz);
+    // The Mixamo rig faces +Z at rotation 0 (verified visually: at yaw 0 the
+    // camera at -Z sees her BACK). atan2(dx,dz) therefore points her exactly
+    // along the desired camera-relative travel direction.
+    if (moveInput) this.facing = Math.atan2(dx, dz);
 
     const crouching = (this.keys.has('ControlLeft') || this.keys.has('KeyC')) && this.grounded;
     const planSpeed = Math.hypot(v.x, v.z);
@@ -344,7 +344,7 @@ class App {
     if (!this.grounded) state = v.y > 0.6 ? 'jump' : 'fall';
     else if (crouching) state = 'crouch';
     else if (planSpeed > idleThreshold) {
-      const fx = -Math.sin(this.facing), fz = -Math.cos(this.facing); // model forward = (-sinθ, -cosθ)
+      const fx = Math.sin(this.facing), fz = Math.cos(this.facing); // model forward = (sinθ, cosθ)
       const dot = (v.x * fx + v.z * fz) / Math.max(planSpeed, 0.001);
       if (dot > 0.45) { state = running ? 'run' : 'walk'; dir = 'forward'; }
       else if (dot < -0.45) { state = 'walk'; dir = 'back'; }
@@ -364,7 +364,7 @@ class App {
     if (this.mode === 'welcome') {
       this.input.update(dt);
       this.character.setState('idle', 0, 'idle');
-      this.character.update(dt, 0, -Math.PI / 2); // idle facing screen-right
+      this.character.update(dt, 0, Math.PI / 2); // idle facing screen-right
       this.character.setPosition(0, 0, 0);
       this.camera.update(dt, new BABYLON.Vector3(0, 1.2, 0));
     } else {

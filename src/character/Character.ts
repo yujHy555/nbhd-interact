@@ -33,8 +33,8 @@ export interface MixamoBinding {
  * directional locomotion (forward/back/strafe), smooth animation blending,
  * secondary motion, and a Mixamo/glTF binding path for production mocap.
  *
- * Procedural rig faces -Z. The imported Mixamo rig faces +Z (handled by the
- * controller's heading convention). All limbs hang down.
+ * Procedural rig faces -Z. The imported Mixamo rig faces +Z at yaw 0 (the
+ * controller's heading convention accounts for this). All limbs hang down.
  */
 export class Character {
   public root: BABYLON.TransformNode;
@@ -285,7 +285,7 @@ export class Character {
     this.t += dt;
     this.blend = Math.min(1, this.blend + dt * 9);
     this.heading = heading;
-    // Smoothly turn toward the requested heading (Mixamo faces +Z at 0)
+    // Smoothly turn toward the requested heading (Mixamo faces +Z at yaw 0)
     let dh = heading - this.root.rotation.y;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
