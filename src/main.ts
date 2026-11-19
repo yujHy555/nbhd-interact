@@ -96,9 +96,9 @@ class App {
     this.world.onZone = (z: ZoneMarker) => { this.ui.setZone(z.name); this.audio.zone(); };
 
     this.character = new Character(this.scene);
-    // Mixamo pipeline: 4 converted GLB clips (Idle/Walking/Running/Jumping)
+    // Mixamo pipeline: ONE skinned character with 4 shared-skeleton clips
     this.mixamo = new MixamoController(this.scene);
-    this.mixamo.loadClips('/models/', ['Idle.glb', 'Walking.glb', 'Running.glb', 'Jumping.glb']).then((ok) => {
+    this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
       if (ok) this.character.bindMixamo(this.mixamo);
     });
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);

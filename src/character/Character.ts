@@ -211,6 +211,30 @@ export class Character {
   public bindMixamo(binding: MixamoBinding) {
     this.mixamo = binding;
     binding.root.parent = this.root;
+    // Auto-scale the imported mocap character to ~1.8 m real-world height.
+    // (FBX→glTF conversion can leave the model at cm-scale.)
+    const meshes = binding.root.getChildMeshes(false);
+    if (meshes.length) {
+      let minY = Infinity, maxY = -Infinity;
+      for (const m of meshes) {
+        const bb = m.getBoundingInfo().boundingBox;
+        minY = Math.min(minY, bb.minimumWorld.y);
+        maxY = Math.max(maxY, bb.maximumWorld.y);
+      }
+      const h = maxY - minY;
+      if (h > 0.001 && (h < 1.2 || h > 2.6)) {
+        const s = 1.8 / h;
+        binding.root.scaling.setAll(s);
+      }
+      // Force world matrices to refresh with the new scale, then seat feet at y=0
+      binding.root.computeWorldMatrix(true);
+      for (const m of meshes) m.computeWorldMatrix(true);
+      let low = Infinity;
+      for (const m of meshes) low = Math.min(low, m.getBoundingInfo().boundingBox.minimumWorld.y);
+      binding.root.position.y -= low;
+      binding.root.computeWorldMatrix(true);
+      for (const m of meshes) m.computeWorldMatrix(true);
+    }
     // Hide procedural mesh while the mocap character is bound
     for (const m of this.meshes) m.setEnabled(false);
   }
