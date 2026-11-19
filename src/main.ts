@@ -96,9 +96,9 @@ class App {
     this.world.onZone = (z: ZoneMarker) => { this.ui.setZone(z.name); this.audio.zone(); };
 
     this.character = new Character(this.scene);
-    // Mixamo pipeline: drop a converted .glb at /models/character.glb to auto-load
+    // Mixamo pipeline: 4 converted GLB clips (Idle/Walking/Running/Jumping)
     this.mixamo = new MixamoController(this.scene);
-    this.mixamo.load('/models/character.glb').then((ok) => {
+    this.mixamo.loadClips('/models/', ['Idle.glb', 'Walking.glb', 'Running.glb', 'Jumping.glb']).then((ok) => {
       if (ok) this.character.bindMixamo(this.mixamo);
     });
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
@@ -164,10 +164,9 @@ class App {
     this.playerProxy.isVisible = false;
     // Capsule centre must be 0.82 m above the surface (half-height 0.5 + radius 0.32)
     this.playerProxy.position.set(2.4, 0.82, 0);
-    const shape = this.havok.capsuleShape(0.32, 1.0);
+    // Box collider matches the box platforms exactly → tight, reliable contacts
+    const shape = this.havok.boxShape(0.6, 1.4, 0.6);
     this.playerBody = this.havok.dynamicBody(this.playerProxy, shape, { mass: 72, linearDamping: 0.02, angularDamping: 1 });
-    // Lock rotation so the capsule never tips over
-    this.playerBody.setMassProperties({ ...this.playerBody.computeMassProperties(), inertia: BABYLON.Vector3.Zero(), inertiaOrientation: BABYLON.Quaternion.Identity() });
     (this.playerBody as any).setGravityFactor?.(1);
   }
 
@@ -276,13 +275,18 @@ class App {
       this.jumpBuffer = 0; this.coyote = 0; this.grounded = false;
       if (this.jumpsUsed < 2) this.jumpsUsed = 1;
     }
-    // Flip rotation
+    // Flip rotation — pivot around the WAIST (centre of mass), not the feet
     if (this.flipTimer > 0) {
       this.flipTimer = Math.max(0, this.flipTimer - dt);
+      this.character.root.setPivotPoint(new BABYLON.Vector3(0, 0.96, 0));
       this.character.root.rotation.x = (1 - this.flipTimer / 0.55) * Math.PI * 2;
       this.character.setState('flip', nvy);
     } else if (this.character.root.rotation.x !== 0) {
       this.character.root.rotation.x *= Math.pow(0.001, dt);
+      if (Math.abs(this.character.root.rotation.x) < 0.01) {
+        this.character.root.rotation.x = 0;
+        this.character.root.setPivotPoint(BABYLON.Vector3.Zero());
+      }
     }
 
     this.havok.setVelocity(this.playerBody, new BABYLON.Vector3(nvx, nvy, nvz));
@@ -296,6 +300,25 @@ class App {
     // Ground check — use the NEW vertical velocity (not stale pre-jump v)
     const wasGrounded = this.grounded;
     this.grounded = this.checkGround() && nvy <= 0.4;
+
+    // Deterministic surface clamp — guarantees NO falling through platforms.
+    // Finds the highest collider top beneath the player's feet.
+    const feet = p.y - 0.7;
+    let surfaceY = 0; // ground level
+    for (const c of this.world.colliders) {
+      const top = c.y + c.h / 2;
+      if (top <= feet + 0.2 && top > surfaceY &&
+          p.x > c.x - c.w / 2 - 0.25 && p.x < c.x + c.w / 2 + 0.25 &&
+          p.z > c.z - c.d / 2 - 0.25 && p.z < c.z + c.d / 2 + 0.25) {
+        surfaceY = top;
+      }
+    }
+    if (p.y - 0.7 <= surfaceY && nvy <= 0) {
+      p.y = surfaceY + 0.7;
+      this.havok.setVelocity(this.playerBody, new BABYLON.Vector3(nvx, 0, nvz));
+      this.grounded = true;
+      if (!wasGrounded && v.y < -1.5) { this.audio.land(Math.abs(v.y)); this.character.landingImpact(v.y); }
+    }
     if (this.grounded && !wasGrounded && v.y < -1.5) {
       this.audio.land(Math.abs(v.y));
       this.character.landingImpact(v.y);

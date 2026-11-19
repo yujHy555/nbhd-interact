@@ -26,6 +26,44 @@ export class MixamoController implements MixamoBinding {
     this.root = new BABYLON.TransformNode('mixamoRoot', scene);
   }
 
+  /** Load the full Mixamo set: one GLB per clip, all bound to the FIRST
+   *  imported skinned mesh so only one character is ever visible. */
+  public async loadClips(url: string, files: string[]): Promise<boolean> {
+    let any = false;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const clipName = file.replace(/\.glb?$/i, '').toLowerCase();
+      try {
+        const result = await BABYLON.SceneLoader.ImportMeshAsync('', url, file, this.scene);
+        if (i === 0) {
+          // First file defines the visible skinned character
+          const rootNode = result.transformNodes.find(n => !n.parent) ?? result.meshes.find(m => !m.parent);
+          if (rootNode) rootNode.parent = this.root;
+          else for (const m of result.meshes) if (!m.parent) m.parent = this.root;
+          // Hide any extra skinned meshes from subsequent imports by tracking them
+        }
+        for (const g of result.animationGroups) {
+          g.name = clipName;
+          this.clipMap.set(clipName, g);
+          this.animationGroups.push(g);
+        }
+        // Later files are animation-only: hide their meshes
+        if (i > 0) {
+          const rootNode = result.transformNodes.find(n => !n.parent) ?? result.meshes.find(m => !m.parent);
+          if (rootNode) rootNode.setEnabled(false);
+          else for (const m of result.meshes) if (!m.parent) m.setEnabled(false);
+        }
+        any = true;
+        console.log(`[Mixamo] loaded ${file} → ${clipName}`);
+      } catch (e) {
+        console.warn(`[Mixamo] failed ${file}:`, e);
+      }
+    }
+    this.stopAll();
+    this.loaded = any;
+    return any;
+  }
+
   /** Load a Mixamo glTF/glb (FBX→glTF converted) with all its animation clips. */
   public async load(url: string, fileName?: string): Promise<boolean> {
     try {

@@ -56,7 +56,8 @@ export class HavokWorld {
     body.applyImpulse(impulse, at ?? body.transformNode.position);
   }
   public teleport(body: BABYLON.PhysicsBody, pos: BABYLON.Vector3) {
-    // preStep is enabled → Havok reads the transform node each step, so set it directly
+    // Direct position — preStep reads it next frame. Disabling preStep target
+    // transforms here caused violent solver fights, so we never use them.
     body.transformNode.position.copyFrom(pos);
     body.setLinearVelocity(BABYLON.Vector3.Zero());
     body.setAngularVelocity(BABYLON.Vector3.Zero());
