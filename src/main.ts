@@ -95,6 +95,9 @@ class App {
         for (const m of this.mixamo.root.getChildMeshes(false)) {
           if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
         }
+      } else {
+        // Only reveal the procedural fallback if the real model truly fails.
+        this.character.unbindMixamo();
       }
     });
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);

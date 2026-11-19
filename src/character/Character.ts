@@ -84,6 +84,10 @@ export class Character {
     this.flipPivot.position.y = 0.96; // waist / centre of mass
     this.buildMaterials();
     this.buildRig();
+    // The procedural rig is only a fallback. Hide it from the very first
+    // frame so the old character is never visible during load/start — the
+    // real Mixamo hero is shown as soon as its GLB finishes loading.
+    for (const m of this.meshes) m.setEnabled(false);
   }
 
   // ---------------------------------------------------------------- materials

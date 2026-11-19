@@ -9,7 +9,7 @@ export interface InputState {
   jumpPressed: boolean;
   axisX: number;
   axisZ: number;
-  cameraX: number;  // left stick → camera orbit
+  cameraX: number;  // right stick → camera orbit
   cameraZ: number;
   run: boolean;     // Shift key OR gamepad shoulder → sprint / run animation
   anyInput: boolean;
@@ -70,15 +70,15 @@ export class Input {
       const gp = gps && gps.length ? Array.from(gps).find(g => g && g.connected) as Gamepad | null : null;
       if (gp) {
         const dz = 0.18;
-        // Left stick = CAMERA ORBIT (per spec)
-        const lx = gp.axes[0] ?? 0, ly = gp.axes[1] ?? 0;
         const dzl = (v: number) => Math.abs(v) > dz ? Math.sign(v) * ((Math.abs(v) - dz) / (1 - dz)) : 0;
-        this.state.cameraX = dzl(lx);
-        this.state.cameraZ = dzl(ly);
-        // Right stick = character movement
+        // Left stick = character movement (industry standard)
+        const lx = gp.axes[0] ?? 0, ly = gp.axes[1] ?? 0;
+        if (Math.abs(lx) > dz) ax = dzl(lx);
+        if (Math.abs(ly) > dz) az = -dzl(ly);
+        // Right stick = camera orbit
         const rx = gp.axes[2] ?? 0, ry = gp.axes[3] ?? 0;
-        if (Math.abs(rx) > dz) ax = dzl(rx);
-        if (Math.abs(ry) > dz) az = -dzl(ry);
+        this.state.cameraX = dzl(rx);
+        this.state.cameraZ = dzl(ry);
         const btn = (i: number) => !!(gp.buttons[i] && gp.buttons[i]!.pressed);
         const jp = btn(0);
         if (jp) { jumpHeld = true; if (!this.padPrev['jump']) jumpPressed = true; }
