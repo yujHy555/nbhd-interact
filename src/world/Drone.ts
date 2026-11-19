@@ -167,7 +167,6 @@ export class Drone {
   private ringMat!: BABYLON.StandardMaterial;
   private halo!: BABYLON.Mesh;
   private haloMat!: BABYLON.StandardMaterial;
-  private hudRings: BABYLON.Mesh[] = [];
   private bodyGrid!: BABYLON.Mesh;      // emission grid wrapped on the player
   private bodyGridMat!: BABYLON.ShaderMaterial;
   private scanLight!: BABYLON.SpotLight; // real light shining onto the player
@@ -330,16 +329,6 @@ export class Drone {
     this.cone.isPickable = false;
     this.cone.setEnabled(false);
 
-    // Holographic HUD rings that lock onto the player during the scan
-    for (let i = 0; i < 3; i++) {
-      const hr = BABYLON.MeshBuilder.CreateTorus('droneHudRing', { diameter: 2.2 + i * 0.5, thickness: 0.025, tessellation: 64 }, this.scene);
-      hr.material = this.emissive('droneHudMat', i === 1 ? '#ff5577' : '#ff2a3a');
-      hr.isPickable = false;
-      hr.parent = this.root;
-      hr.setEnabled(false);
-      this.hudRings.push(hr);
-    }
-
     // Expanding ground ring under the target
     this.ringMat = this.emissive('droneRingMat', '#ff2a3a');
     this.ringMat.alpha = 0.85;
@@ -479,16 +468,6 @@ export class Drone {
         if (this.bodyGridMat) this.bodyGridMat.setFloat('strength', beam);
       }
 
-      // Holographic HUD rings — rotating, counter-spinning lock-on reticles
-      for (let i = 0; i < this.hudRings.length; i++) {
-        const hr = this.hudRings[i];
-        hr.setEnabled(beam > 0.02);
-        hr.position.set(player.x - this.root.position.x, player.y + 0.9 + (i - 1) * 0.35, player.z - this.root.position.z);
-        hr.rotation.x = Math.PI / 2 + Math.sin(this.time * (0.7 + i * 0.3)) * 0.12;
-        hr.rotation.z = this.time * (i % 2 ? -0.9 : 1.2);
-        hr.scaling.setAll(beam * (0.95 + Math.sin(this.time * 3 + i) * 0.04));
-      }
-
       // Ground ring + secondary rings expanding under the target
       const rp = (this.phaseT % 1.0) / 1.0;
       this.ring.position.set(player.x, player.y + 0.04, player.z);
@@ -501,7 +480,6 @@ export class Drone {
         this.halo.setEnabled(false);
         this.scanLight.intensity = 0;
         if (this.bodyGrid) this.bodyGrid.setEnabled(false);
-        for (const hr of this.hudRings) hr.setEnabled(false);
         this.phase = 'depart'; this.phaseT = 0;
         this.departPos = this.root.position.clone();
         this.onCue?.();

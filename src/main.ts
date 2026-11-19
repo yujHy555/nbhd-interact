@@ -465,11 +465,22 @@ class App {
     // ---- Acceleration & crisp braking ----
     const accel = this.grounded ? 30 : 10;
     const step = accel * dt;
-    const tx = moveInput ? dx * maxSpeed : belt; // input → normal control; idle → carried
-    const tz = moveInput ? dz * maxSpeed : 0;
+    let tx: number, tz: number;
+    if (moveInput) {
+      tx = dx * maxSpeed;  // air/ground steering
+      tz = dz * maxSpeed;
+    } else if (this.grounded) {
+      tx = belt;           // on belt → carried; on ground → brake to rest
+      tz = 0;
+    } else {
+      // Airborne with no input → PRESERVE momentum exactly. This keeps the
+      // belt's carry speed when the player jumps off the travelator.
+      tx = v.x;
+      tz = v.z;
+    }
     v.x += Math.max(-step, Math.min(step, tx - v.x));
     v.z += Math.max(-step, Math.min(step, tz - v.z));
-    if (!moveInput && !onBelt) {
+    if (!moveInput && !onBelt && this.grounded) {
       if (Math.abs(v.x) < 0.02) v.x = 0;
       if (Math.abs(v.z) < 0.02) v.z = 0;
     }
