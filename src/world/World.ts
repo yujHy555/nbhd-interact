@@ -178,6 +178,15 @@ export class World {
       rail.position.set(x, top + 0.28, z + side * (d / 2 + 0.04));
       rail.material = this.mats.matte('travelatorRailMat', [0.95, 0.72, 0.12]);
       rail.receiveShadows = true;
+      // Exact collider for the rail — acts as a solid barrier at the belt edge.
+      this.colliders.push({
+        x: x,
+        y: top + 0.28,
+        z: rail.position.z,
+        w: w + 0.12,
+        h: 0.14,
+        d: 0.14,
+      });
     });
     this.travelators.push({ x, z, w, d, top, speed });
   }
