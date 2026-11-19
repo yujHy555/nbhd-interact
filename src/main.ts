@@ -54,6 +54,7 @@ class App {
   private jumpBuffer = 0;
   private jumpsUsed = 0;      // 0 grounded, 1 first jump, 2 double jump
   private doubleJumpFx = 0;   // keeps the "doubleJump" state alive briefly
+  private tripleJumpFx = 0;   // 3rd-jump hang-time window (reduced gravity)
   private debugMeshes: BABYLON.Mesh[] = [];
 
   constructor() {
@@ -498,34 +499,46 @@ class App {
       if (Math.abs(v.z) < 0.02) v.z = 0;
     }
 
-    // ---- Double jump (coyote + input buffer) ----
-    // Both jumps reuse the SAME Mixamo jump clip; the second one launches
-    // higher and adds a small directional boost + camera kick for a snappier,
-    // distinctly more powerful feel.
+    // ---- Triple jump (coyote + input buffer) ----
+    // All three reuse the SAME Mixamo jump clip. Each tier is distinct:
+    //  1st: standard jump
+    //  2nd: higher + forward burst + camera kick
+    //  3rd: highest "sky leap" — big vertical, brief hang-time (lower gravity
+    //       pulse), a burst of radial sparks and a deeper camera punch.
     if (this.grounded) this.jumpsUsed = 0;
     this.coyote = this.grounded ? 0.12 : Math.max(0, this.coyote - dt);
     this.jumpBuffer = s.jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
     const groundJump = this.coyote > 0 && this.jumpsUsed === 0;
-    const airJump = !this.grounded && this.jumpsUsed === 1;
+    const airJump = !this.grounded && (this.jumpsUsed === 1 || this.jumpsUsed === 2);
     if (this.jumpBuffer > 0 && (groundJump || airJump)) {
       if (groundJump) {
         v.y = 8.6;
         this.jumpsUsed = 1;
         this.audio.jump();
-      } else {
-        v.y = 10.8; // ~1.6× the height of the first jump
+      } else if (this.jumpsUsed === 1) {
+        v.y = 10.8; // 2nd jump — higher
         this.jumpsUsed = 2;
         this.doubleJumpFx = 0.4;
-        // Small forward burst for a punchier second jump
         const len = Math.max(0.001, Math.hypot(v.x, v.z));
         if (len > 0.1) { v.x += (v.x / len) * 1.4; v.z += (v.z / len) * 1.4; }
         this.audio.doubleJump();
         this.camera.punch(4);
         this.polish?.sparkle(new BABYLON.Vector3(p.x, p.y + 0.6, p.z));
+      } else {
+        v.y = 13.2; // 3rd sky leap — highest, with hang-time below
+        this.jumpsUsed = 3;
+        this.tripleJumpFx = 0.85;
+        this.audio.doubleJump();
+        this.audio.whoosh();
+        this.camera.punch(7);
+        this.polish?.sparkle(new BABYLON.Vector3(p.x, p.y + 1.1, p.z));
+        this.polish?.sparkle(new BABYLON.Vector3(p.x + 0.5, p.y + 0.8, p.z));
+        this.polish?.sparkle(new BABYLON.Vector3(p.x - 0.5, p.y + 0.8, p.z));
       }
       this.jumpBuffer = 0; this.coyote = 0; this.grounded = false;
     }
     if (this.doubleJumpFx > 0) this.doubleJumpFx = Math.max(0, this.doubleJumpFx - dt);
+    if (this.tripleJumpFx > 0) this.tripleJumpFx = Math.max(0, this.tripleJumpFx - dt);
 
     // ---- Sub-stepped integration: wall blocks + ground snap ----
     const wasGrounded = this.grounded;
@@ -534,7 +547,9 @@ class App {
     const sdt = dt / steps;
     const radius = 0.28;
     for (let i = 0; i < steps; i++) {
-      v.y -= GRAVITY * sdt;
+      // 3rd-jump hang-time: reduced gravity at the apex for a floaty, cinematic feel.
+      const g = this.tripleJumpFx > 0 && v.y > 0 ? GRAVITY * 0.45 : GRAVITY;
+      v.y -= g * sdt;
       if (v.y < -32) v.y = -32;
       const nx = p.x + v.x * sdt;
       const nz = p.z + v.z * sdt;
@@ -578,7 +593,7 @@ class App {
     const idleThreshold = this.character.state === 'idle' ? 0.38 : 0.16;
     let state: AnimState;
     let dir: MoveDir = 'idle';
-    if (!this.grounded) state = this.doubleJumpFx > 0 ? 'doubleJump' : (v.y > 0.6 ? 'jump' : 'fall');
+    if (!this.grounded) state = this.tripleJumpFx > 0 ? 'doubleJump' : (this.doubleJumpFx > 0 ? 'doubleJump' : (v.y > 0.6 ? 'jump' : 'fall'));
     else if (onBelt && !moveInput) state = 'idle'; // carried calmly by the belt
     else if (crouching) state = 'crouch';
     else if (planSpeed > idleThreshold) {

@@ -64,7 +64,7 @@ export class SciFiCity {
     // Deep background — pushed well back in +Z so they never crowd the
     // travelators/road in the foreground play strip (z ≈ 0).
     const spots = [
-      { x: 60, z: 46, s: 1.0 }, { x: 90, z: 56, s: 1.4 }, { x: 130, z: 48, s: 1.1 },
+      { x: 60, z: 58, s: 1.0 }, { x: 90, z: 56, s: 1.4 }, { x: 130, z: 48, s: 1.1 },
       { x: 180, z: 60, s: 1.6 }, { x: 240, z: 50, s: 1.2 }, { x: 310, z: 62, s: 1.5 },
       { x: 390, z: 52, s: 1.3 }, { x: 470, z: 64, s: 1.7 }, { x: 560, z: 54, s: 1.4 },
       { x: 660, z: 66, s: 1.8 }, { x: 760, z: 56, s: 1.5 },
