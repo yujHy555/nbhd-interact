@@ -47,10 +47,10 @@ export class Environment {
     skyMat.specularColor = BABYLON.Color3.Black();
     sky.material = skyMat;
     sky.isPickable = false;
-    sky.infiniteDistance = true;
     sky.applyFog = false;
-    // Never frustum-cull the sky — it must always fill the background even
-    // at extreme camera orbit angles / far ends of the expanded map.
+    // infiniteDistance keeps the sky centred on the camera at every position
+    // (verified at x=2300). Never frustum-cull it.
+    sky.infiniteDistance = true;
     sky.alwaysSelectAsActiveMesh = true;
     sky.renderingGroupId = 0;
 
@@ -117,13 +117,22 @@ export class Environment {
 
   public registerShadowCaster(mesh: BABYLON.AbstractMesh) { this.shadowGen.addShadowCaster(mesh, true); }
 
-  /** Keep the sun's shadow volume centred on the action so contact shadows
-   *  stay crisp and visible at every point in the level. */
+  /** Keep the sun's shadow volume centred on the action. Position is QUANTIZED
+   *  to 40 m steps so the light only jumps occasionally instead of sliding
+   *  every frame — continuous movement caused swimming/glitchy shadows. */
+  private sunCellX = NaN;
+  private sunCellZ = NaN;
   public focusSun(target: BABYLON.Vector3) {
-    this.sun.position.set(target.x + 48, target.y + 78, target.z + 45);
+    const cellX = Math.round(target.x / 40) * 40;
+    const cellZ = Math.round(target.z / 40) * 40;
+    if (cellX !== this.sunCellX || cellZ !== this.sunCellZ) {
+      this.sunCellX = cellX; this.sunCellZ = cellZ;
+      this.sun.position.set(cellX + 48, target.y + 78, cellZ + 45);
+    }
     this.sun.direction.set(-0.48, -0.78, -0.45);
-    this.sun.orthoLeft = -26; this.sun.orthoRight = 26;
-    this.sun.orthoTop = 26; this.sun.orthoBottom = -26;
+    // Wide fixed frustum so shadows stay stable and cover the play area.
+    this.sun.orthoLeft = -40; this.sun.orthoRight = 40;
+    this.sun.orthoTop = 40; this.sun.orthoBottom = -40;
   }
 
   /** Equirectangular canvas → cube texture used as IBL + sky. */

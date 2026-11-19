@@ -50,13 +50,9 @@ export class Polish {
       this.pipeline.grain.intensity = 4;
       this.pipeline.grain.animated = true;
     }
-    // Depth of field — subtle, focuses on the character distance
-    (this.pipeline as any).depthOfFieldEnabled = true;
-    if (this.pipeline.depthOfField) {
-      this.pipeline.depthOfField.focusDistance = 13000; // mm
-      this.pipeline.depthOfField.fStop = 8;
-      this.pipeline.depthOfField.focalLength = 42;
-    }
+    // Depth of field DISABLED — it blurred the distant sky sphere into
+    // nothing (the "background disappearing" bug) and cost performance.
+    (this.pipeline as any).depthOfFieldEnabled = false;
 
     // ---- Cinematic accent lights ----
     this.rim = new BABYLON.PointLight('rimLight', new BABYLON.Vector3(0, 5, 8), scene);
