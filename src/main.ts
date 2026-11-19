@@ -9,7 +9,7 @@ import { MixamoController } from './character/Mixamo';
 import { Polish } from './core/Polish';
 import { GameAudio } from './core/GameAudio';
 import { Materials } from './world/Materials';
-import { World, Pickup, ZoneMarker } from './world/World';
+import { World, Pickup, ZoneMarker, SlopeCollider } from './world/World';
 import { UI } from './ui/UI';
 
 type Mode = 'welcome' | 'explore';
@@ -43,6 +43,8 @@ class App {
   private grounded = false;
   private coyote = 0;
   private jumpBuffer = 0;
+  private jumpsUsed = 0;      // 0 grounded, 1 first jump, 2 double jump
+  private doubleJumpFx = 0;   // keeps the "doubleJump" state alive briefly
   private debugMeshes: BABYLON.Mesh[] = [];
 
   constructor() {
@@ -87,7 +89,7 @@ class App {
 
     this.character = new Character(this.scene);
     // Face screen-right from the very first frame (idle at start)
-    this.character.root.rotation.y = Math.PI / 2;
+    this.character.headingPivot.rotation.y = Math.PI / 2;
     this.mixamo = new MixamoController(this.scene);
     this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
       if (ok) {
@@ -215,32 +217,62 @@ class App {
     this.pvel.set(0, 0, 0);
     this.grounded = true;
     this.facing = Math.PI / 2;
-    this.character.root.rotation.y = Math.PI / 2;
+    this.character.headingPivot.rotation.y = Math.PI / 2;
     this.camera.snap(new BABYLON.Vector3(2.4, 1, 0));
   }
 
-  /** Highest solid surface at (x,z) at or just below the feet (feet-relative). */
+  /** Exact surface height of a ramp at world X. */
+  private slopeHeight(s: SlopeCollider, x: number) {
+    const t = Math.max(0, Math.min(1, (x - (s.x - s.w / 2)) / s.w));
+    return s.y0 + (s.y1 - s.y0) * t;
+  }
+
+  /** Highest solid surface at (x,z) the feet can rest on — platforms AND
+   *  ramps, using a tight foot radius so shoes land exactly on the surface. */
   private surfaceAt(x: number, z: number, feetY: number): number {
     let best = 0; // ground plane
-    const R = 0.24;
+    const R = 0.1; // foot half-width — precise edge contact
+    const STEP = 0.25; // max step-up per substep
     for (const c of this.world.colliders) {
       const top = c.y + c.h / 2;
-      if (top > feetY + 0.4 || top <= best) continue;
+      if (top > feetY + STEP || top <= best) continue;
       if (x > c.x - c.w / 2 - R && x < c.x + c.w / 2 + R &&
-          z > c.z - c.d / 2 - R && z < c.z + c.d / 2 + R) {
-        best = top;
-      }
+          z > c.z - c.d / 2 - R && z < c.z + c.d / 2 + R) best = top;
+    }
+    for (const s of this.world.slopes) {
+      if (x < s.x - s.w / 2 - R || x > s.x + s.w / 2 + R ||
+          z < s.z - s.d / 2 - R || z > s.z + s.d / 2 + R) continue;
+      const h = this.slopeHeight(s, x);
+      if (h > feetY + STEP || h <= best) continue;
+      best = h;
     }
     return best;
   }
 
-  /** Solid box overlapping the player's body → horizontal move blocked. */
+  /** Slope pitch (radians) to align the character with the surface underfoot. */
+  private slopeAngleAt(x: number, z: number, feetY: number): number {
+    for (const s of this.world.slopes) {
+      if (x < s.x - s.w / 2 || x > s.x + s.w / 2 ||
+          z < s.z - s.d / 2 || z > s.z + s.d / 2) continue;
+      if (Math.abs(this.slopeHeight(s, x) - feetY) < 0.18) return Math.atan2(s.y1 - s.y0, s.w);
+    }
+    return 0;
+  }
+
+  /** Solid box overlapping the player's body → horizontal move blocked.
+   *  Ramps are walkable, so they never block — except when they rise well
+   *  above the feet (walking into the raised end from the side). */
   private wallAt(x: number, z: number, feetY: number, radius: number): boolean {
     for (const c of this.world.colliders) {
       const top = c.y + c.h / 2, bot = c.y - c.h / 2;
-      if (feetY >= top - 0.08 || feetY + 1.75 <= bot) continue; // above/below
+      if (feetY >= top - 0.08 || feetY + 1.75 <= bot) continue;
       if (x + radius > c.x - c.w / 2 && x - radius < c.x + c.w / 2 &&
           z + radius > c.z - c.d / 2 && z - radius < c.z + c.d / 2) return true;
+    }
+    for (const s of this.world.slopes) {
+      if (x < s.x - s.w / 2 - radius || x > s.x + s.w / 2 + radius ||
+          z < s.z - s.d / 2 - radius || z > s.z + s.d / 2 + radius) continue;
+      if (feetY + 0.3 < this.slopeHeight(s, x)) return true;
     }
     return false;
   }
@@ -285,14 +317,34 @@ class App {
       if (Math.abs(v.z) < 0.02) v.z = 0;
     }
 
-    // ---- Single jump (coyote + input buffer) ----
+    // ---- Double jump (coyote + input buffer) ----
+    // Both jumps reuse the SAME Mixamo jump clip; the second one launches
+    // higher and adds a small directional boost + camera kick for a snappier,
+    // distinctly more powerful feel.
+    if (this.grounded) this.jumpsUsed = 0;
     this.coyote = this.grounded ? 0.12 : Math.max(0, this.coyote - dt);
     this.jumpBuffer = s.jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
-    if (this.jumpBuffer > 0 && this.coyote > 0) {
-      v.y = 8.6;
-      this.audio.jump();
+    const groundJump = this.coyote > 0 && this.jumpsUsed === 0;
+    const airJump = !this.grounded && this.jumpsUsed === 1;
+    if (this.jumpBuffer > 0 && (groundJump || airJump)) {
+      if (groundJump) {
+        v.y = 8.6;
+        this.jumpsUsed = 1;
+        this.audio.jump();
+      } else {
+        v.y = 10.8; // ~1.6× the height of the first jump
+        this.jumpsUsed = 2;
+        this.doubleJumpFx = 0.4;
+        // Small forward burst for a punchier second jump
+        const len = Math.max(0.001, Math.hypot(v.x, v.z));
+        if (len > 0.1) { v.x += (v.x / len) * 1.4; v.z += (v.z / len) * 1.4; }
+        this.audio.doubleJump();
+        this.camera.punch(4);
+        this.polish?.sparkle(new BABYLON.Vector3(p.x, p.y + 0.6, p.z));
+      }
       this.jumpBuffer = 0; this.coyote = 0; this.grounded = false;
     }
+    if (this.doubleJumpFx > 0) this.doubleJumpFx = Math.max(0, this.doubleJumpFx - dt);
 
     // ---- Sub-stepped integration: wall blocks + ground snap ----
     const wasGrounded = this.grounded;
@@ -328,8 +380,10 @@ class App {
     this.character.setFlip(0);
     if (landed) { this.audio.land(6); this.character.landingImpact(-8); this.camera.punch(3); }
 
-    // Visual root sits at the FEET
+    // Visual root sits exactly at the FEET surface, and the body tilts to
+    // match the ramp underfoot so shoes and pose stay aligned with the slope.
     this.character.setPosition(p.x, p.y, p.z);
+    this.character.setSlopeAngle(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0);
 
     // ---- Facing ----
     // The Mixamo rig faces +Z at rotation 0 (verified visually: at yaw 0 the
@@ -344,7 +398,7 @@ class App {
     const idleThreshold = this.character.state === 'idle' ? 0.38 : 0.16;
     let state: AnimState;
     let dir: MoveDir = 'idle';
-    if (!this.grounded) state = v.y > 0.6 ? 'jump' : 'fall';
+    if (!this.grounded) state = this.doubleJumpFx > 0 ? 'doubleJump' : (v.y > 0.6 ? 'jump' : 'fall');
     else if (crouching) state = 'crouch';
     else if (planSpeed > idleThreshold) {
       const fx = Math.sin(this.facing), fz = Math.cos(this.facing); // model forward = (sinθ, cosθ)

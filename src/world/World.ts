@@ -2,12 +2,15 @@ import * as BABYLON from 'babylonjs';
 import { Materials } from './Materials';
 
 export interface BoxCollider { x: number; y: number; z: number; w: number; h: number; d: number; }
+/** A walkable ramp rising along +X. Its top surface is EXACTLY y0→y1. */
+export interface SlopeCollider { x: number; z: number; w: number; d: number; y0: number; y1: number; }
 export interface Pickup { mesh: BABYLON.Mesh; pos: BABYLON.Vector3; collected: boolean; phase: number; }
 export interface ZoneMarker { x: number; name: string; }
 
 /** Continuous horizontal prototype world — three zones, metric scale. */
 export class World {
   public colliders: BoxCollider[] = [];
+  public slopes: SlopeCollider[] = [];
   public pickups: Pickup[] = [];
   public zones: ZoneMarker[] = [
     { x: 0, name: 'WELCOME' },
@@ -44,35 +47,52 @@ export class World {
     return box;
   }
 
-  private addSlope(x: number, y: number, z: number, w: number, d: number, angle: number) {
-    const ramp = BABYLON.MeshBuilder.CreateBox('ramp', { width: w, height: 0.25, depth: d }, this.scene);
-    ramp.position.set(x, y, z);
-    ramp.rotation.x = angle;
+  /** Build a ramp whose visible top surface and collision surface are the
+   *  SAME plane — no approximation. The box is sheared (not rotated) so the
+   *  run stays horizontal and the slope angle matches atan2(rise, run). */
+  private addRamp(x0: number, y0: number, x1: number, y1: number, z: number, d: number) {
+    const w = x1 - x0;
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const T = 0.22; // slab thickness
+    const ramp = BABYLON.MeshBuilder.CreateBox('ramp', { width: w, height: T, depth: d }, this.scene);
+    ramp.position.set(cx, cy - T / 2, z);
+    // Shear: shift each vertex's Y by its X position × gradient.
+    const positions = ramp.getVerticesData(BABYLON.VertexBuffer.PositionKind)!;
+    const rise = y1 - y0;
+    for (let i = 0; i < positions.length; i += 3) positions[i + 1] += (positions[i] / w) * rise;
+    ramp.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+    const indices = ramp.getIndices()!;
+    const normals: number[] = [];
+    BABYLON.VertexData.ComputeNormals(positions, indices, normals);
+    ramp.updateVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
     ramp.material = this.mats.concrete('rampMat');
     ramp.receiveShadows = true;
-    // Approximate collider as a box around the ramp
-    this.colliders.push({ x, y: y - 0.2, z, w, h: 0.5, d: d * Math.cos(angle) });
+    this.slopes.push({ x: cx, z, w, d, y0, y1 });
     return ramp;
   }
 
   private build() {
     // ---- Welcome zone (0..70): material test area, hero starts on ground ----
     // Welcome zone stepping platforms
-    this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);
-    this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);
-    this.addPlatform(26, 1.8, 0, 5, 1, 4, [0.2, 0.9, 1]);
-    this.addSlope(36, 1.4, 0, 6, 4, -0.22);
-    this.addPlatform(47, 2.2, 0, 6, 1, 4, [0.2, 0.9, 1]);
-    this.addPlatform(58, 2.8, 0, 6, 1, 4, [0.2, 0.9, 1]);
+    this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.0, x 8..12
+    this.addRamp(12, 1.0, 16, 1.6, 0, 4);                       // 8.5° up
+    this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.6, x 16..20
+    this.addRamp(20, 1.6, 23.5, 2.3, 0, 4);                     // 11.3° up
+    this.addPlatform(26, 1.8, 0, 5, 1, 4, [0.2, 0.9, 1]);      // top 2.3, x 23.5..28.5
+    this.addRamp(28.5, 2.3, 44, 2.7, 0, 4);                     // gentle bridge
+    this.addPlatform(47, 2.2, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 2.7
+    this.addPlatform(58, 2.8, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 3.3
 
     // ---- What We Do zone (78..150): content cubes + platforms ----
     this.addPlatform(72, 1.0, 0, 6, 1, 5, [1, 0.78, 0.2]);
-    this.addPlatform(84, 1.8, 0, 5, 1, 5, [1, 0.78, 0.2]);
-    this.addPlatform(96, 2.6, 0, 5, 1, 5, [1, 0.78, 0.2]);
-    this.addSlope(108, 2.2, 0, 7, 5, -0.25);
-    this.addPlatform(120, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);
-    this.addPlatform(134, 3.6, 0, 6, 1, 5, [1, 0.78, 0.2]);
-    this.addPlatform(146, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);
+    this.addPlatform(84, 1.8, 0, 5, 1, 5, [1, 0.78, 0.2]);      // top 2.3
+    this.addRamp(86.5, 2.3, 93.5, 3.1, 0, 5);                   // 6.5° up
+    this.addPlatform(96, 2.6, 0, 5, 1, 5, [1, 0.78, 0.2]);      // top 3.1
+    this.addPlatform(120, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 3.5
+    this.addPlatform(134, 3.6, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 4.1
+    this.addRamp(137, 4.1, 143, 3.5, 0, 5);                     // 5.7° down
+    this.addPlatform(146, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 3.5
 
     // ---- Contact zone (156..200) ----
     this.addPlatform(158, 2.2, 0, 6, 1, 5, [0.95, 0.4, 0.75]);

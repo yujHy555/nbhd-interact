@@ -38,6 +38,10 @@ export interface MixamoBinding {
  */
 export class Character {
   public root: BABYLON.TransformNode;
+  /** World-space slope tilt (about Z) — parent of heading, so feet stay on ramps. */
+  public slopePivot: BABYLON.TransformNode;
+  /** Yaw pivot — heading only; the slope tilt is applied above it. */
+  public headingPivot: BABYLON.TransformNode;
   /** Waist-height pivot — rotate this for flips so they pivot at the centre of mass. */
   public flipPivot: BABYLON.TransformNode;
   public state: AnimState = 'idle';
@@ -79,8 +83,12 @@ export class Character {
   constructor(scene: BABYLON.Scene) {
     this.scene = scene;
     this.root = new BABYLON.TransformNode('characterRoot', scene);
+    this.slopePivot = new BABYLON.TransformNode('characterSlopePivot', scene);
+    this.slopePivot.parent = this.root;
+    this.headingPivot = new BABYLON.TransformNode('characterHeadingPivot', scene);
+    this.headingPivot.parent = this.slopePivot;
     this.flipPivot = new BABYLON.TransformNode('characterFlipPivot', scene);
-    this.flipPivot.parent = this.root;
+    this.flipPivot.parent = this.headingPivot;
     this.flipPivot.position.y = 0.96; // waist / centre of mass
     this.buildMaterials();
     this.buildRig();
@@ -147,7 +155,7 @@ export class Character {
 
   private buildRig() {
     // ---- Core ----
-    this.pelvis = this.node('pelvis', this.root, 0, 0.96, 0);
+    this.pelvis = this.node('pelvis', this.headingPivot, 0, 0.96, 0);
     this.mesh('pelvisMesh', this.pelvis, 'sphere', { diameter: 0.36, segments: 16 }, this.outfitMat, [0, 0, 0], [0, 0, 0], [1.15, 0.72, 0.85]);
     // Belt must sit OUTSIDE the pelvis ellipsoid (x radius ~0.21, z ~0.15)
     this.mesh('belt', this.pelvis, 'cyl', { diameter: 0.45, height: 0.055, tessellation: 20 }, this.accentMat, [0, 0.01, 0], [0, 0, 0], [1, 1, 0.78]);
@@ -290,10 +298,10 @@ export class Character {
     this.blend = Math.min(1, this.blend + dt * 9);
     this.heading = heading;
     // Smoothly turn toward the requested heading (Mixamo faces +Z at yaw 0)
-    let dh = heading - this.root.rotation.y;
+    let dh = heading - this.headingPivot.rotation.y;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
-    this.root.rotation.y += dh * Math.min(1, dt * 12);
+    this.headingPivot.rotation.y += dh * Math.min(1, dt * 12);
 
     if (this.mixamo) {
       // Foot-lock: playback rate tracks real ground speed so the feet do not
@@ -414,6 +422,10 @@ export class Character {
     this.t += dt;
     this.secondary = Math.sin(this.t * 1.5) * 0.01;
   }
+
+  /** Tilt the whole body to match the slope underfoot (radians).
+   *  Applied above the yaw pivot so it is a true world-space tilt. */
+  public setSlopeAngle(angle: number) { this.slopePivot.rotation.z = -angle; }
 
   /** Set the flip rotation about the waist (radians). */
   public setFlip(angle: number) { this.flipPivot.rotation.x = angle; }
