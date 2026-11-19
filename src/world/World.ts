@@ -129,26 +129,29 @@ export class World {
     deck.receiveShadows = true;
     this.colliders.push({ x, y: top / 2, z, w, h: top, d });
 
-    // Belt — wider slats on a rich rubber surface with subtle tread speckle.
+    // Belt lines run PARALLEL to the side rails (both along world X).
+    // UVs: U→world X, V→world Z. Horizontal canvas bands (constant V) become
+    // lines running along X; dashes along U make their +X motion visible.
     const cv = document.createElement('canvas');
     cv.width = 128; cv.height = 128;
     const ctx = cv.getContext('2d')!;
     ctx.fillStyle = '#24292e'; ctx.fillRect(0, 0, 128, 128); // dark rubber
-    // fine rubber grain
     for (let i = 0; i < 1400; i++) {
       ctx.fillStyle = i % 2 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.05)';
       ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
     }
-    for (let i = 0; i < 128; i += 32) {
-      ctx.fillStyle = '#586571';            // slightly wider bright slat
-      ctx.fillRect(i, 0, 9, 128);
-      ctx.fillStyle = '#15191d';            // soft shadow groove
-      ctx.fillRect(i + 9, 0, 5, 128);
+    // Dashed lanes running horizontally (along X), parallel to the rails.
+    for (const y of [18, 58, 98]) {
+      ctx.fillStyle = '#5d6b76';
+      for (let x = 0; x < 128; x += 64) ctx.fillRect(x, y, 40, 9); // bright dash
+      ctx.fillStyle = '#14191d';
+      for (let x = 0; x < 128; x += 64) ctx.fillRect(x + 40, y, 24, 9); // groove
     }
     const tex = new BABYLON.Texture(cv.toDataURL(), this.scene);
     tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
     tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-    tex.uScale = w / 1.5;
+    tex.uScale = w / 2;   // tile dashes along X
+    tex.vScale = 1;       // lanes stay at fixed Z — parallel to rails
     this.beltTextures.push(tex);
     const belt = new BABYLON.PBRMaterial('travelatorBelt', this.scene);
     belt.albedoTexture = tex;
