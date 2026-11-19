@@ -91,6 +91,33 @@
     .menu-btn::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,0.22) 50%, transparent 60%); transform: translateX(-120%); transition: transform 0.5s; }
     .menu-btn:hover::after { transform: translateX(120%); }
     .menu-foot { margin-top: 22px; font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0.45; }
+    /* Controls diagrams */
+    .controls-panel { width: min(1040px, 94vw); }
+    .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 18px 0; }
+    .diagram-card { padding: 20px; border-radius: 16px; background: rgba(255,255,255,0.035); border: 1px solid rgba(255,255,255,0.09); }
+    .diagram-title { font-size: 0.72rem; letter-spacing: 0.24em; font-weight: 800; color: var(--cyan); margin-bottom: 14px; }
+    .diagram-title span { color: rgba(255,255,255,0.4); font-weight: 500; font-size: 0.62rem; }
+    .kb-wrap { display: flex; flex-direction: column; gap: 8px; align-items: center; margin: 6px 0 18px; }
+    .kb-row { display: flex; gap: 8px; }
+    .key { width: 54px; height: 46px; display: flex; align-items: center; justify-content: center; border-radius: 9px; font: 700 0.9rem/1 ui-monospace, monospace; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16); box-shadow: inset 0 -3px 0 rgba(0,0,0,0.3); position: relative; }
+    .key::after { content: attr(data-lbl); position: absolute; bottom: -15px; font: 600 0.55rem/1 'Segoe UI'; letter-spacing: 0.1em; color: rgba(255,255,255,0.35); }
+    .key-dim { opacity: 0.35; }
+    .key-hot { background: linear-gradient(180deg, rgba(92,225,230,0.32), rgba(92,225,230,0.09)); border-color: var(--cyan); color: #d8ffff; box-shadow: 0 0 18px rgba(92,225,230,0.25), inset 0 -3px 0 rgba(0,0,0,0.3); }
+    .key-wide { width: 76px; font-size: 0.66rem; letter-spacing: 0.06em; }
+    .key-space { width: 150px; font-size: 0.66rem; background: linear-gradient(180deg, rgba(255,200,87,0.32), rgba(255,200,87,0.08)); border-color: var(--gold); box-shadow: 0 0 18px rgba(255,200,87,0.25); color: #fff4d6; }
+    .pad { width: 100%; height: auto; display: block; }
+    .padlbl { fill: #5ce1e6; font: 700 11px 'Segoe UI', sans-serif; letter-spacing: 1.4px; }
+    .padlbl.gold { fill: #ffc857; }
+    .padlbl.pink { fill: #ff7fb8; }
+    .padbtn { fill: #fff; font: 800 14px 'Segoe UI'; }
+    .legend { display: grid; gap: 8px; }
+    .legend > div { display: grid; grid-template-columns: 14px 90px 1fr; align-items: center; gap: 8px; font-size: 0.78rem; color: rgba(255,255,255,0.62); }
+    .legend b { color: #fff; font-size: 0.72rem; letter-spacing: 0.06em; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .dot.cyan { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+    .dot.gold { background: var(--gold); box-shadow: 0 0 10px var(--gold); }
+    .dot.pink { background: var(--pink); box-shadow: 0 0 10px var(--pink); }
+    @media (max-width: 760px) { .controls-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -132,14 +159,55 @@
 
   <!-- Controls -->
   <div id="controls" class="overlay">
-    <div class="panel">
+    <div class="panel controls-panel">
       <div class="eyebrow">Field Guide</div>
       <h2>Controls</h2>
-      <div class="feature-grid">
-        <div class="card"><h3>Move</h3><p><kbd>W A S D</kbd> or arrow keys · gamepad LEFT stick</p></div>
-        <div class="card"><h3>Look</h3><p>Gamepad RIGHT stick orbits the camera</p></div>
-        <div class="card"><h3>Jump</h3><p><kbd>SPACE</kbd> · double-jump for extra height</p></div>
-        <div class="card"><h3>Sprint</h3><p>Hold <kbd>SHIFT</kbd> · gamepad shoulder buttons</p></div>
+      <div class="controls-grid">
+        <!-- KEYBOARD -->
+        <div class="diagram-card">
+          <div class="diagram-title">KEYBOARD <span>/ WASD + ACTIONS</span></div>
+          <div class="kb-wrap">
+            <div class="kb-row"><span class="key key-dim">Q</span><span class="key key-hot" data-lbl="W">W</span><span class="key key-dim">E</span></div>
+            <div class="kb-row"><span class="key key-hot" data-lbl="A">A</span><span class="key key-hot" data-lbl="S">S</span><span class="key key-hot" data-lbl="D">D</span></div>
+            <div class="kb-row kb-space"><span class="key key-wide">SHIFT</span><span class="key key-hot key-space" data-lbl="SPACE">SPACE</span><span class="key key-wide">CTRL</span></div>
+          </div>
+          <div class="legend">
+            <div><i class="dot cyan"></i><b>WASD</b><span>Move / face direction</span></div>
+            <div><i class="dot gold"></i><b>SPACE</b><span>Jump · press again to double-jump</span></div>
+            <div><i class="dot pink"></i><b>SHIFT</b><span>Sprint — hold while moving</span></div>
+            <div><i class="dot cyan"></i><b>CTRL</b><span>Crouch</span></div>
+          </div>
+        </div>
+        <!-- GAMEPAD -->
+        <div class="diagram-card">
+          <div class="diagram-title">GAMEPAD <span>/ STICKS + BUTTONS</span></div>
+          <svg class="pad" viewBox="0 0 420 230" role="img" aria-label="Gamepad controls diagram">
+            <defs>
+              <linearGradient id="padBody" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#2b3d4a"/><stop offset="1" stop-color="#16242e"/>
+              </linearGradient>
+              <filter id="padGlow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+            </defs>
+            <path d="M95 40 H325 Q375 40 390 80 L410 175 Q418 205 385 212 Q350 218 325 185 L300 155 H120 L95 185 Q70 218 35 212 Q2 205 10 175 L30 80 Q45 40 95 40 Z" fill="url(#padBody)" stroke="#5ce1e6" stroke-width="2"/>
+            <!-- left stick -->
+            <g filter="url(#padGlow)"><circle cx="115" cy="105" r="30" fill="#0e1c24" stroke="#5ce1e6" stroke-width="3"/><circle cx="115" cy="105" r="12" fill="#5ce1e6" opacity="0.9"/></g>
+            <text x="115" y="160" text-anchor="middle" class="padlbl">MOVE</text>
+            <!-- right stick -->
+            <g filter="url(#padGlow)"><circle cx="285" cy="130" r="30" fill="#0e1c24" stroke="#ffc857" stroke-width="3"/><circle cx="285" cy="130" r="12" fill="#ffc857" opacity="0.9"/></g>
+            <text x="285" y="185" text-anchor="middle" class="padlbl gold">CAMERA</text>
+            <!-- face buttons -->
+            <g filter="url(#padGlow)"><circle cx="345" cy="78" r="15" fill="#1a2b35" stroke="#ff7fb8" stroke-width="3"/><text x="345" y="84" text-anchor="middle" class="padbtn">A</text></g>
+            <text x="345" y="55" text-anchor="middle" class="padlbl pink">JUMP</text>
+            <!-- shoulders -->
+            <g filter="url(#padGlow)"><rect x="80" y="24" width="70" height="16" rx="8" fill="#1a2b35" stroke="#5ce1e6" stroke-width="2"/><rect x="270" y="24" width="70" height="16" rx="8" fill="#1a2b35" stroke="#5ce1e6" stroke-width="2"/></g>
+            <text x="210" y="22" text-anchor="middle" class="padlbl">LB / RB — SPRINT</text>
+          </svg>
+          <div class="legend">
+            <div><i class="dot cyan"></i><b>LEFT STICK</b><span>Move &amp; face direction</span></div>
+            <div><i class="dot gold"></i><b>RIGHT STICK</b><span>Orbit camera</span></div>
+            <div><i class="dot pink"></i><b>A / SHOULDER</b><span>Jump / Sprint</span></div>
+          </div>
+        </div>
       </div>
       <div class="row"><button class="btn ghost" id="btn-controls-close">Back →</button></div>
     </div>

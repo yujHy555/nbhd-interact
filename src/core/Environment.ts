@@ -100,8 +100,7 @@ export class Environment {
     this.ground.receiveShadows = true;
     this.ground.position.x = 90; // centre of the horizontal world
 
-    this.buildMaterialBalls();
-    this.buildMacbethChart();
+    // Start area kept clean — no calibration chart or material test balls.
   }
 
   public registerShadowCaster(mesh: BABYLON.AbstractMesh) { this.shadowGen.addShadowCaster(mesh, true); }

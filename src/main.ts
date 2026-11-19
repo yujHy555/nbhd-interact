@@ -116,6 +116,7 @@ class App {
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.enableShadowReceivers();
     this.loadCows();
+    this.loadRoad();
 
     this.input = new Input();
     this.camera = new CameraRig(this.scene, this.canvas);
@@ -176,6 +177,63 @@ class App {
       box.position.set(c.x, c.y, c.z);
       box.material = mat;
       this.debugMeshes.push(box);
+    }
+  }
+
+  /** Modular road: bake the imported GLB into a clean, normalized segment and
+   *  repeat it five times end-to-end after the ramp. Segments are snapped by
+   *  using one exact length for both the mesh and the placement step. */
+  private async loadRoad() {
+    try {
+      const res = await BABYLON.SceneLoader.ImportMeshAsync('', '/models/road/', 'road.glb', this.scene);
+      const src = res.meshes.find((m) => m instanceof BABYLON.Mesh && m.getTotalVertices() > 0) as BABYLON.Mesh | undefined;
+      if (!src) return;
+      src.computeWorldMatrix(true);
+      const pos = src.getVerticesData(BABYLON.VertexBuffer.PositionKind)!;
+      const uv = src.getVerticesData(BABYLON.VertexBuffer.UVKind);
+      const idx = src.getIndices()!;
+      const wm = src.getWorldMatrix();
+      const v = new BABYLON.Vector3();
+      const world: number[] = [];
+      for (let i = 0; i < pos.length; i += 3) {
+        BABYLON.Vector3.TransformCoordinatesToRef(new BABYLON.Vector3(pos[i], pos[i + 1], pos[i + 2]), wm, v);
+        world.push(v.x, v.y, v.z);
+      }
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+      for (let i = 0; i < world.length; i += 3) {
+        minX = Math.min(minX, world[i]); maxX = Math.max(maxX, world[i]);
+        minY = Math.min(minY, world[i + 1]); maxY = Math.max(maxY, world[i + 1]);
+        minZ = Math.min(minZ, world[i + 2]); maxZ = Math.max(maxZ, world[i + 2]);
+      }
+      const LEN = 8;                       // exact modular length along X
+      const longZ = (maxZ - minZ) >= (maxX - minX);
+      const span = longZ ? maxZ - minZ : maxX - minX;
+      const s = LEN / span;
+      const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+      const baked: number[] = [];
+      for (let i = 0; i < world.length; i += 3) {
+        let x = world[i] - cx, z = world[i + 2] - cz;
+        if (longZ) { const t = x; x = z; z = -t; } // align long axis with world X
+        baked.push(x * s, (world[i + 1] - maxY) * s, z * s); // top flush with ground
+      }
+      const normals: number[] = [];
+      BABYLON.VertexData.ComputeNormals(baked, idx, normals);
+      const seg = new BABYLON.Mesh('roadSegment', this.scene);
+      const vd = new BABYLON.VertexData();
+      vd.positions = baked; vd.indices = idx; vd.normals = normals;
+      if (uv) vd.uvs = Array.from(uv);
+      vd.applyToMesh(seg);
+      seg.material = src.material;
+      seg.setEnabled(false);
+      const START = 52; // after the ramp + platform
+      for (let i = 0; i < 5; i++) {
+        const road = seg.createInstance(`road${i}`);
+        road.position.set(START + i * LEN, 0, 0);
+        road.isPickable = false;
+        road.receiveShadows = true;
+      }
+    } catch (e) {
+      console.warn('[Road] modular road failed to load:', e);
     }
   }
 

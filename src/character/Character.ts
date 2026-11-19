@@ -441,7 +441,8 @@ export class Character {
       low = Math.min(low, m.getBoundingInfo().boundingBox.minimumWorld.y);
     }
     const deficit = surfaceY - low;
-    if (deficit > 0 && deficit < 0.5) this.root.position.y += deficit;
+    // +1.5 cm safety so animated toes never dip below the inclined plane.
+    if (deficit > 0 && deficit < 0.5) this.root.position.y += deficit + 0.015;
   }
 
   /** Set the flip rotation about the waist (radians). */
