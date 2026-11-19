@@ -164,6 +164,8 @@ export class World {
 
   private build() {
     // ---- Welcome zone (0..70): material test area, hero starts on ground ----
+    // Starting travelator (x=2..10) — carries the player from the very start.
+    this.addTravelator(6, 0, 8, 5, 5.5);
     // Welcome zone stepping platforms
     this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.0
     this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.6
@@ -211,14 +213,45 @@ export class World {
       this.colliders.push({ x: cube.position.x, y: cube.position.y, z: cube.position.z, w: s, h: s, d: s });
     }
 
-    // Pickups
+    // INDIE-STYLE collectibles — chunky pixel-art "stars" built from tiny
+    // cubes, with a soft glow billboard. Placed high above the highest nearby
+    // surface so they NEVER intersect platforms, ramps, road or the player.
+    const starMat = new BABYLON.StandardMaterial('pickupStarMat', this.scene);
+    starMat.diffuseColor = BABYLON.Color3.Black();
+    starMat.specularColor = BABYLON.Color3.Black();
+    starMat.emissiveColor = BABYLON.Color3.FromHexString('#ffd24a');
+    starMat.disableLighting = true;
+
     for (let i = 0; i < 16; i++) {
       const x = 12 + i * 10.5;
-      const y = 2.6 + Math.sin(i * 0.8) * 0.8;
-      const orb = BABYLON.MeshBuilder.CreateSphere('pickup', { diameter: 0.55, segments: 14 }, this.scene);
-      orb.position.set(x, y, 0);
-      orb.material = this.mats.emissive('pickupMat', [1, 0.82, 0.2]);
-      this.pickups.push({ mesh: orb, pos: orb.position.clone(), collected: false, phase: i * 0.7 });
+      const z = 0;
+      // Find the HIGHEST surface within a generous radius so the collectible
+      // clears everything nearby (platform tops, ramps, road, travelators).
+      let base = 0;
+      for (let dx = -3; dx <= 3; dx += 1.5) {
+        for (let dz = -3; dz <= 3; dz += 1.5) base = Math.max(base, this.surfaceHeightAt(x + dx, z + dz));
+      }
+      const y = base + 2.2; // ≥2.2 m of clear air below the lowest cube
+      const root = new BABYLON.TransformNode(`pickup${i}`, this.scene);
+      root.position.set(x, y, z);
+
+      // Pixel-art star: a plus of blocks in the XY plane = retro 8-bit star
+      const px = 0.12;
+      const cells = [[0,0],[px,0],[-px,0],[0,px],[0,-px],[px*0.7,px*0.7],[-px*0.7,px*0.7],[px*0.7,-px*0.7],[-px*0.7,-px*0.7]];
+      for (const [cx, cy] of cells) {
+        const cube = BABYLON.MeshBuilder.CreateBox('pickupPixel', { size: 0.14 }, this.scene);
+        cube.position.set(cx, cy, 0);
+        cube.material = starMat;
+        cube.parent = root;
+      }
+      // Tiny sparkle accents (reuse the same material)
+      for (const a of [0, Math.PI / 2]) {
+        const sp = BABYLON.MeshBuilder.CreateBox('pickupSpark', { size: 0.06 }, this.scene);
+        sp.position.set(Math.cos(a) * 0.24, Math.sin(a) * 0.24, 0);
+        sp.material = starMat;
+        sp.parent = root;
+      }
+      this.pickups.push({ mesh: root as any, pos: root.position.clone(), collected: false, phase: i * 0.7 });
     }
 
     // Zone sign posts (skip the start area — keep it clean)
@@ -233,6 +266,22 @@ export class World {
     panel.position.set(zone.x, 6.2, -5);
     panel.material = this.mats.emissive('zonePanelMat', [0.2, 0.9, 1]);
     this.signs.push(panel);
+  }
+
+  /** Highest surface at (x,z) — platforms, ramps, travelators, ground. */
+  public surfaceHeightAt(x: number, z: number): number {
+    let h = 0;
+    for (const c of this.colliders) {
+      const top = c.y + c.h / 2;
+      if (top > h && x > c.x - c.w / 2 && x < c.x + c.w / 2 && z > c.z - c.d / 2 && z < c.z + c.d / 2) h = top;
+    }
+    for (const s of this.slopes) {
+      if (x >= s.x - s.w / 2 && x <= s.x + s.w / 2 && z >= s.z - s.d / 2 && z <= s.z + s.d / 2) {
+        const t = (x - (s.x - s.w / 2)) / s.w;
+        h = Math.max(h, s.y0 + (s.y1 - s.y0) * t);
+      }
+    }
+    return h;
   }
 
   /** Belt speed affecting the player at the given feet position (world +X). */
@@ -250,9 +299,15 @@ export class World {
     for (const tex of this.beltTextures) tex.uOffset -= dt * this.travelators[0].speed / 1.5;
     for (const p of this.pickups) {
       if (p.collected) continue;
-      p.mesh.rotation.y += dt * 1.8;
-      p.mesh.position.y = p.pos.y + Math.sin(this.t * 2 + p.phase) * 0.22;
-      if (BABYLON.Vector3.Distance(p.mesh.position, new BABYLON.Vector3(playerX, p.pos.y, 0)) < 1.2) {
+      p.mesh.rotation.y += dt * 0.9;
+      p.mesh.position.y = p.pos.y + Math.sin(this.t * 2 + p.phase) * 0.16;
+      (p.mesh as any).scaling.setAll(0.94 + Math.sin(this.t * 5 + p.phase) * 0.06);
+      // Crystal spins, inner core pulses, rings counter-rotate
+      const kids = p.mesh.getChildren() as BABYLON.AbstractMesh[];
+      if (kids[0]) kids[0].rotation.y += dt * 1.4;
+      if (kids[1]) kids[1].scaling.setAll(0.9 + Math.sin(this.t * 4 + p.phase) * 0.15);
+      for (let k = 2; k < kids.length; k++) kids[k].rotation.z += dt * (k % 2 ? 1.6 : -1.3);
+      if (BABYLON.Vector3.Distance(p.mesh.position, new BABYLON.Vector3(playerX, p.pos.y, 0)) < 1.3) {
         p.collected = true;
         p.mesh.setEnabled(false);
         this.onPickup?.(p);

@@ -51,23 +51,20 @@ export class Environment {
     sky.applyFog = false;
 
     // ---- Sun (directional) with shadows ----
-    // Low 9am sun from screen-right/front: long shadow cast toward the camera
-    // (-Z) and screen-left, so it lies clearly visible in front of the player.
-    this.sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.62, -0.42, -0.66), scene);
-    this.sun.position = new BABYLON.Vector3(60, 42, 64);
-    this.sun.intensity = 4.2; // strong low-angle sun → high-contrast long shadows
+    // 11am sun — higher than 9am, so a moderately long shadow still falls
+    // toward the camera (-Z) and screen-left, clearly visible in front.
+    this.sun = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(-0.48, -0.78, -0.45), scene);
+    this.sun.position = new BABYLON.Vector3(48, 78, 45);
+    this.sun.intensity = 3.6;
     this.sun.diffuse = new BABYLON.Color3(1.0, 0.96, 0.88);
     this.sun.specular = new BABYLON.Color3(1, 0.98, 0.92);
-    this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
-    // PCF high-quality: strongest, soft-edged shadows (verified 223 contrast
-    // levels vs 156 for ESM) and stable with the low 9am sun angle.
+    // High-res PCF: soft-edged but never blocky or pixelated.
+    this.shadowGen = new BABYLON.ShadowGenerator(4096, this.sun);
     this.shadowGen.usePercentageCloserFiltering = true;
     this.shadowGen.filteringQuality = BABYLON.ShadowGenerator.QUALITY_HIGH;
-    this.shadowGen.setDarkness(0.06);     // deep, dramatic, natural
-    this.shadowGen.bias = 0.0006;
-    this.shadowGen.normalBias = 0.012;
-    this.shadowGen.bias = 0.0008;
-    this.shadowGen.normalBias = 0.015;
+    this.shadowGen.setDarkness(0.12);     // slightly softer than before
+    this.shadowGen.bias = 0.00035;
+    this.shadowGen.normalBias = 0.008;
     // Tight shadow volume around the player. Auto-fitting a level-long caster
     // list made the map so coarse that the hero's contact shadow vanished.
     this.sun.autoUpdateExtends = false;
@@ -119,12 +116,10 @@ export class Environment {
   /** Keep the sun's shadow volume centred on the action so contact shadows
    *  stay crisp and visible at every point in the level. */
   public focusSun(target: BABYLON.Vector3) {
-    // 9am sun: low angle → long, dramatic shadow. Frustum stays centred on
-    // the action and wide enough to contain the extended shadow.
-    this.sun.position.set(target.x + 58, target.y + 40, target.z + 62);
-    this.sun.direction.set(-0.62, -0.42, -0.66);
-    this.sun.orthoLeft = -30; this.sun.orthoRight = 30;
-    this.sun.orthoTop = 30; this.sun.orthoBottom = -30;
+    this.sun.position.set(target.x + 48, target.y + 78, target.z + 45);
+    this.sun.direction.set(-0.48, -0.78, -0.45);
+    this.sun.orthoLeft = -26; this.sun.orthoRight = 26;
+    this.sun.orthoTop = 26; this.sun.orthoBottom = -26;
   }
 
   /** Equirectangular canvas → cube texture used as IBL + sky. */
