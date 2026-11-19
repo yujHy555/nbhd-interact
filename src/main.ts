@@ -14,6 +14,7 @@ import { UI } from './ui/UI';
 import { Minimap } from './ui/Minimap';
 import { Drone } from './world/Drone';
 import { PixelPortal } from './world/PixelPortal';
+import { SciFiCity } from './world/SciFiCity';
 
 type Mode = 'welcome' | 'explore';
 
@@ -143,6 +144,18 @@ class App {
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.enableShadowReceivers();
     this.loadRoad();
+    // Background sci-fi city with landable colliders.
+    const city = new SciFiCity(this.scene);
+    city.load((c) => {
+      this.world.colliders.push(c);
+    }).then(() => {
+      for (const m of this.scene.meshes) {
+        if (m.name.indexOf('sciFiBuilding') === 0) {
+          m.receiveShadows = true;
+          this.env.registerShadowCaster(m);
+        }
+      }
+    });
 
     this.input = new Input();
     this.camera = new CameraRig(this.scene, this.canvas);
