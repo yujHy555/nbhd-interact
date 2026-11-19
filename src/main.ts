@@ -503,7 +503,6 @@ class App {
     // Visual root at the FEET surface, body tilted to the slope with dynamic
     // compensation so the shoes never sink below the inclined plane.
     this.character.setPosition(p.x, p.y, p.z);
-    this.character.alignToSlope(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0, p.y);
 
     // ---- Facing ----
     // The Mixamo rig faces +Z at rotation 0 (verified visually: at yaw 0 the
@@ -530,6 +529,7 @@ class App {
 
     this.character.setState(state, v.y, dir);
     this.character.update(dt, planSpeed, this.facing);
+    this.character.alignToSlope(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0, p.y);
     this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), !this.grounded, state);
   }
 

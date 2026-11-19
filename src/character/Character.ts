@@ -80,6 +80,8 @@ export class Character {
   private pupilMat!: BABYLON.StandardMaterial;
   private meshes: BABYLON.Mesh[] = [];
   private footOffset = 0.13; // ankle bone → sole distance, calibrated at bind time
+  private footPitch = 0;     // slope angle to conform the shoes to (radians)
+  private footPitchAxis = new BABYLON.Vector3(0, 0, 1);
 
   constructor(scene: BABYLON.Scene) {
     this.scene = scene;
@@ -91,6 +93,21 @@ export class Character {
     this.flipPivot = new BABYLON.TransformNode('characterFlipPivot', scene);
     this.flipPivot.parent = this.headingPivot;
     this.flipPivot.position.y = 0.96; // waist / centre of mass
+    // Apply the slope conform rotation AFTER animations each frame, otherwise
+    // the Mixamo clip overwrites the foot bones during rendering.
+    scene.onAfterAnimationsObservable.add(() => {
+      if (!this.mixamo || Math.abs(this.footPitch) < 0.005) return;
+      const extra = BABYLON.Quaternion.RotationAxis(this.footPitchAxis, this.footPitch);
+      for (const m of this.mixamo.root.getChildMeshes(false)) {
+        const sk = (m as BABYLON.Mesh).skeleton;
+        if (!sk) continue;
+        for (const boneName of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
+          const b = sk.bones.find((x) => x.name === boneName);
+          if (!b || !b.rotationQuaternion) continue;
+          b.rotationQuaternion = b.rotationQuaternion.multiply(extra);
+        }
+      }
+    });
     this.buildMaterials();
     this.buildRig();
     // The procedural rig is only a fallback. Hide it from the very first
@@ -446,6 +463,8 @@ export class Character {
     // Keep the torso upright — only the feet are planted on the surface via
     // the root lift below. Tilting the whole body looks like falling over.
     this.slopePivot.rotation.z = 0;
+    this.footPitch = angle;
+    this.footPitchAxis.set(-Math.sin(this.heading), 0, Math.cos(this.heading));
     if (!this.mixamo) return;
     // Measure the real animated ankle bones (the skinned mesh's bounding box
     // is bind-pose only and does not follow the walk cycle).
