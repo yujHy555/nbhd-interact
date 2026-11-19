@@ -36,6 +36,8 @@ export interface MixamoBinding {
  */
 export class Character {
   public root: BABYLON.TransformNode;
+  /** Waist-height pivot — rotate this for flips so they pivot at the centre of mass. */
+  public flipPivot: BABYLON.TransformNode;
   public state: AnimState = 'idle';
   public colors: CharacterColors = { ...DEFAULT_COLORS };
   public onLand?: () => void;
@@ -75,6 +77,9 @@ export class Character {
   constructor(scene: BABYLON.Scene) {
     this.scene = scene;
     this.root = new BABYLON.TransformNode('characterRoot', scene);
+    this.flipPivot = new BABYLON.TransformNode('characterFlipPivot', scene);
+    this.flipPivot.parent = this.root;
+    this.flipPivot.position.y = 0.96; // waist / centre of mass
     this.buildMaterials();
     this.buildRig();
   }
@@ -210,7 +215,9 @@ export class Character {
   /** Bind an imported Mixamo-style glTF character and its animation groups. */
   public bindMixamo(binding: MixamoBinding) {
     this.mixamo = binding;
-    binding.root.parent = this.root;
+    // Mount the mocap character on the waist pivot (offset so feet sit at y=0)
+    binding.root.parent = this.flipPivot;
+    binding.root.position.y = -0.96;
     // Auto-scale the imported mocap character to ~1.8 m real-world height.
     // (FBX→glTF conversion can leave the model at cm-scale.)
     const meshes = binding.root.getChildMeshes(false);
@@ -389,6 +396,10 @@ export class Character {
     this.t += dt;
     this.secondary = Math.sin(this.t * 1.5) * 0.01;
   }
+
+  /** Set the flip rotation about the waist (radians). */
+  public setFlip(angle: number) { this.flipPivot.rotation.x = angle; }
+  public getFlip() { return this.flipPivot.rotation.x; }
 
   public landingImpact(v: number) {
     this.squash = -Math.min(0.14, Math.abs(v) * 0.012);

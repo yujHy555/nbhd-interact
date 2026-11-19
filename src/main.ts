@@ -41,9 +41,10 @@ class App {
   private debug = false;
   private keys = new Set<string>();
 
-  // Havok player
-  private playerBody!: BABYLON.PhysicsBody;
-  private playerProxy!: BABYLON.Mesh;
+  // Deterministic kinematic player (single source of truth — no Havok fights)
+  private playerProxy!: BABYLON.Mesh; // visual-only transform the rest reads
+  private ppos: BABYLON.Vector3 = new BABYLON.Vector3(0, 0, 0); // feet position
+  private pvel: BABYLON.Vector3 = new BABYLON.Vector3(0, 0, 0);
   private grounded = false;
   private coyote = 0;
   private jumpBuffer = 0;
@@ -99,7 +100,13 @@ class App {
     // Mixamo pipeline: ONE skinned character with 4 shared-skeleton clips
     this.mixamo = new MixamoController(this.scene);
     this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
-      if (ok) this.character.bindMixamo(this.mixamo);
+      if (ok) {
+        this.character.bindMixamo(this.mixamo);
+        // Real accurate cast shadow from the skinned hero mesh
+        for (const m of this.mixamo.root.getChildMeshes(false)) {
+          if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
+        }
+      }
     });
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.character.setPosition(0, 0.3, 0);
@@ -158,17 +165,14 @@ class App {
     }
   }
 
-  /** Capsule physics body for the player — AAA grounded movement via Havok. */
+  /** Kinematic player transform (deterministic controller owns ppos/pvel). */
   private buildPlayerPhysics() {
-    this.playerProxy = BABYLON.MeshBuilder.CreateCylinder('playerProxy', { diameter: 0.64, height: 1.0, tessellation: 12 }, this.scene);
-    this.playerProxy.isVisible = false;
-    // Capsule centre must be 0.82 m above the surface (half-height 0.5 + radius 0.32)
-    this.playerProxy.position.set(2.4, 0.82, 0);
-    // Box collider matches the box platforms exactly → tight, reliable contacts
-    const shape = this.havok.boxShape(0.6, 1.4, 0.6);
-    this.playerBody = this.havok.dynamicBody(this.playerProxy, shape, { mass: 72, linearDamping: 0.02, angularDamping: 1 });
-    (this.playerBody as any).setGravityFactor?.(1);
+    this.playerProxy = new BABYLON.TransformNode('playerProxy', this.scene) as any;
+    this.ppos.set(2.4, 0, 0);
+    this.pvel.set(0, 0, 0);
+    this.syncProxy();
   }
+  private syncProxy() { this.playerProxy.position.set(this.ppos.x, this.ppos.y, this.ppos.z); }
 
   /** Register every platform / surface mesh as a shadow receiver. */
   private enableShadowReceivers() {
@@ -224,139 +228,144 @@ class App {
   private startExploring() {
     this.mode = 'explore';
     this.turntableOn = false;
-    this.havok.teleport(this.playerBody, new BABYLON.Vector3(2.4, 0.82, 0));
+    this.ppos.set(2.4, 0, 0);
+    this.pvel.set(0, 0, 0);
+    this.syncProxy();
     this.camera.snap(new BABYLON.Vector3(2.4, 0.9, 0));
     this.facing = Math.PI / 2; // face +X (right) — the way we explore
   }
 
-  /** Downward raycast for ground detection (works with Havok static bodies). */
-  private checkGround(): boolean {
-    const origin = this.playerProxy.position.clone();
-    const ray = new BABYLON.Ray(origin, new BABYLON.Vector3(0, -1, 0), 0.9);
-    const hit = this.scene.pickWithRay(ray, (m) => m.isEnabled() && (m.name === 'platform' || m.name === 'ramp' || m.name === 'turntable' || m.name === 'ground' || m.name === 'protoCube'));
-    return !!(hit && hit.hit && hit.pickedPoint);
+  /** Highest solid surface directly beneath the player's feet. */
+  private surfaceUnder(x: number, z: number, feetY: number): number {
+    let best = 0; // ground
+    const R = 0.28;
+    for (const c of this.world.colliders) {
+      const top = c.y + c.h / 2;
+      if (top > feetY + 0.28) continue; // above the feet → not standable from here
+      if (x > c.x - c.w / 2 - R && x < c.x + c.w / 2 + R &&
+          z > c.z - c.d / 2 - R && z < c.z + c.d / 2 + R) {
+        if (top > best) best = top;
+      }
+    }
+    return best;
   }
 
   private updateController(dt: number) {
     this.input.update(dt);
     const s = this.input.state;
+    const GRAVITY = 22;
+    const MAX = 4.2 * (this.keys.has('ShiftLeft') ? 1.4 : 1);
+    const v = this.pvel;
+    const p = this.ppos;
 
-    const accel = 46;
-    const maxSpeed = 3.8 * (this.keys.has('ShiftLeft') ? 1.4 : 1); // tighter, no tunneling
-    const v = this.havok.getVelocity(this.playerBody);
+    // ---- Horizontal movement (snappy, all directions) ----
+    const ax = s.axisX, az = s.axisZ;
+    if (Math.abs(ax) > 0.05) v.x += (ax * MAX - v.x) * Math.min(1, dt * 18);
+    else v.x *= Math.pow(0.0008, dt);
+    if (Math.abs(az) > 0.05) v.z += (az * MAX * 0.6 - v.z) * Math.min(1, dt * 18);
+    else v.z *= Math.pow(0.02, dt);
 
-    // Desired planar velocity from input
-    const desiredX = s.axisX * maxSpeed;
-    const desiredZ = s.axisZ * maxSpeed * 0.6;
-    let nvx = v.x, nvz = v.z;
-    if (Math.abs(s.axisX) > 0.05) nvx += (desiredX - v.x) * Math.min(1, accel * dt / Math.max(maxSpeed, 0.1));
-    else nvx *= Math.pow(0.002, dt);
-    if (Math.abs(s.axisZ) > 0.05) nvz += (desiredZ - v.z) * Math.min(1, accel * dt / Math.max(maxSpeed, 0.1));
-    else nvz *= Math.pow(0.02, dt);
-
-    // NO auto-jump; jump strictly on press. 2 jumps: 2nd is an air FLIP.
+    // ---- Jump (explicit press only; coyote + buffer). Double jump = flip ----
     this.coyote = this.grounded ? 0.12 : Math.max(0, this.coyote - dt);
     this.jumpBuffer = s.jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
-    let nvy = v.y;
     if (this.grounded) this.jumpsUsed = 0;
-    if (this.jumpBuffer > 0 && (this.coyote > 0 || (this.jumpsUsed === 1 && !this.grounded))) {
+    let jumped = false;
+    if (this.jumpBuffer > 0 && (this.coyote > 0 || (!this.grounded && this.jumpsUsed === 1))) {
       if (this.coyote > 0 && this.jumpsUsed === 0) {
-        nvy = 8.4;
+        v.y = 8.6;
         this.audio.jump();
       } else {
-        // Double jump — flip!
-        nvy = 7.6;
+        v.y = 7.8;
         this.jumpsUsed = 2;
-        this.flipTimer = 0.55;
-        this.audio.doubleJump();
-        this.audio.flip();
-        this.polish?.sparkle(this.playerProxy.position);
+        this.flipTimer = 0.5;
+        this.audio.doubleJump(); this.audio.flip();
+        this.polish?.sparkle(new BABYLON.Vector3(p.x, p.y + 1, p.z));
       }
       this.jumpBuffer = 0; this.coyote = 0; this.grounded = false;
       if (this.jumpsUsed < 2) this.jumpsUsed = 1;
+      jumped = true;
     }
-    // Flip rotation — pivot around the WAIST (centre of mass), not the feet
+
+    // ---- Sub-stepped integration (tight, no tunneling) ----
+    const wasGrounded = this.grounded;
+    let landed = false;
+    const steps = Math.max(2, Math.min(10, Math.ceil((Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z)) * dt / 0.18)));
+    const sdt = dt / steps;
+    const radius = 0.3;
+    for (let i = 0; i < steps; i++) {
+      v.y -= GRAVITY * sdt;
+      if (v.y < -30) v.y = -30;
+      const nextX = p.x + v.x * sdt;
+      const nextZ = p.z + v.z * sdt;
+      const nextY = p.y + v.y * sdt;
+
+      // Ground / platform landing: only when descending
+      const surf = this.surfaceUnder(nextX, nextZ, p.y);
+      if (v.y <= 0 && nextY <= surf) {
+        p.y = surf;
+        p.x = nextX; p.z = nextZ;
+        if (!wasGrounded && v.y < -1.5) landed = true;
+        v.y = 0;
+        this.grounded = true;
+        break;
+      }
+
+      // Horizontal wall collision: resolve against boxes overlapping our height
+      let blocked = false;
+      for (const c of this.world.colliders) {
+        const top = c.y + c.h / 2, bot = c.y - c.h / 2;
+        if (p.y >= top - 0.05 || p.y + 1.7 <= bot) continue;
+        if (nextX + radius > c.x - c.w / 2 && nextX - radius < c.x + c.w / 2 &&
+            nextZ + radius > c.z - c.d / 2 && nextZ - radius < c.z + c.d / 2) {
+          blocked = true; break;
+        }
+      }
+      if (!blocked) { p.x = nextX; p.z = nextZ; }
+      else { v.x *= 0.2; v.z *= 0.2; }
+      p.y = Math.max(nextY, 0);
+      if (p.y <= 0) { p.y = 0; v.y = 0; this.grounded = true; }
+    }
+
+    // Fell into the void (safety)
+    if (p.y < -8) { p.set(2.4, 0, 0); v.set(0, 0, 0); }
+
+    // ---- Flip about the waist pivot ----
     if (this.flipTimer > 0) {
       this.flipTimer = Math.max(0, this.flipTimer - dt);
-      this.character.root.setPivotPoint(new BABYLON.Vector3(0, 0.96, 0));
-      this.character.root.rotation.x = (1 - this.flipTimer / 0.55) * Math.PI * 2;
-      this.character.setState('flip', nvy);
-    } else if (this.character.root.rotation.x !== 0) {
-      this.character.root.rotation.x *= Math.pow(0.001, dt);
-      if (Math.abs(this.character.root.rotation.x) < 0.01) {
-        this.character.root.rotation.x = 0;
-        this.character.root.setPivotPoint(BABYLON.Vector3.Zero());
-      }
+      this.character.setFlip((1 - this.flipTimer / 0.5) * Math.PI * 2);
+    } else if (this.character.getFlip() !== 0) {
+      const f = this.character.getFlip() * Math.pow(0.0005, dt);
+      this.character.setFlip(Math.abs(f) < 0.01 ? 0 : f);
     }
 
-    this.havok.setVelocity(this.playerBody, new BABYLON.Vector3(nvx, nvy, nvz));
+    // Landing feedback (once)
+    if (landed) { this.audio.land(Math.abs(v.y) + 4); this.character.landingImpact(-8); this.camera.punch(3); }
 
-    // Keep within world bounds
-    const p = this.playerProxy.position;
-    if (p.x < -3) { p.x = -3; }
-    if (p.x > 198) { p.x = 198; }
-    if (p.y < -6) { this.havok.teleport(this.playerBody, new BABYLON.Vector3(2.4, 1.0, 0)); }
+    // ---- Sync visuals ----
+    this.syncProxy();
+    this.character.setPosition(p.x, p.y, p.z);
 
-    // Ground check — use the NEW vertical velocity (not stale pre-jump v)
-    const wasGrounded = this.grounded;
-    this.grounded = this.checkGround() && nvy <= 0.4;
-
-    // Deterministic surface clamp — guarantees NO falling through platforms.
-    // Finds the highest collider top beneath the player's feet.
-    const feet = p.y - 0.7;
-    let surfaceY = 0; // ground level
-    for (const c of this.world.colliders) {
-      const top = c.y + c.h / 2;
-      if (top <= feet + 0.2 && top > surfaceY &&
-          p.x > c.x - c.w / 2 - 0.25 && p.x < c.x + c.w / 2 + 0.25 &&
-          p.z > c.z - c.d / 2 - 0.25 && p.z < c.z + c.d / 2 + 0.25) {
-        surfaceY = top;
-      }
-    }
-    if (p.y - 0.7 <= surfaceY && nvy <= 0) {
-      p.y = surfaceY + 0.7;
-      this.havok.setVelocity(this.playerBody, new BABYLON.Vector3(nvx, 0, nvz));
-      this.grounded = true;
-      if (!wasGrounded && v.y < -1.5) { this.audio.land(Math.abs(v.y)); this.character.landingImpact(v.y); }
-    }
-    if (this.grounded && !wasGrounded && v.y < -1.5) {
-      this.audio.land(Math.abs(v.y));
-      this.character.landingImpact(v.y);
-    }
-
-    // Crouch when holding Ctrl / C while grounded
-    const crouching = (this.keys.has('ControlLeft') || this.keys.has('KeyC')) && this.grounded;
-
-    // Sync visual character to physics capsule. Feet extend ~0.12 below the
-    // character root, so lift it to keep shoes on the ground surface.
-    this.character.setPosition(p.x, p.y - 0.58, p.z);
-
-    // Heading from movement direction (character faces -Z at heading 0)
-    let targetHeading = this.facing;
+    // Heading from movement direction
     if (Math.abs(s.axisX) > 0.1 || Math.abs(s.axisZ) > 0.1) {
-      targetHeading = Math.atan2(-s.axisX, -s.axisZ);
-      this.facing = targetHeading;
+      this.facing = Math.atan2(-s.axisX, -s.axisZ);
     }
 
-    // Determine animation + directional variant
-    const planSpeed = Math.hypot(nvx, nvz);
-    const vertical = nvy;
+    const crouching = (this.keys.has('ControlLeft') || this.keys.has('KeyC')) && this.grounded;
+    const planSpeed = Math.hypot(v.x, v.z);
     let state: AnimState;
     let dir: MoveDir = 'idle';
-    if (!this.grounded) state = vertical > 0.8 ? 'jump' : 'fall';
-    else if (crouching) { state = 'crouch'; this.audio.crouch(); }
+    if (!this.grounded) state = this.flipTimer > 0 ? 'flip' : (v.y > 0.8 ? 'jump' : 'fall');
+    else if (crouching) { state = 'crouch'; }
     else if (planSpeed > 0.3) {
-      // Direction relative to heading
-      const facingX = -Math.sin(this.facing), facingZ = -Math.cos(this.facing);
-      const dot = (nvx * facingX + nvz * facingZ) / Math.max(planSpeed, 0.001);
-      if (dot > 0.55) { state = planSpeed > 3.0 ? 'run' : 'walk'; dir = 'forward'; }
+      const fx = -Math.sin(this.facing), fz = -Math.cos(this.facing);
+      const dot = (v.x * fx + v.z * fz) / Math.max(planSpeed, 0.001);
+      if (dot > 0.55) { state = planSpeed > 2.6 ? 'run' : 'walk'; dir = 'forward'; }
       else if (dot < -0.55) { state = 'walk'; dir = 'back'; }
-      else { state = 'strafe'; dir = nvx > 0 ? 'right' : 'left'; }
+      else { state = 'strafe'; dir = v.x > 0 ? 'right' : 'left'; }
     } else state = 'idle';
 
-    this.character.setState(state, vertical, dir);
+    this.character.setState(state, v.y, dir);
     this.character.update(dt, planSpeed, this.facing);
-    // Footsteps perfectly synced to the animation cycle
     this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), !this.grounded, state);
   }
 
@@ -367,12 +376,7 @@ class App {
     if (Math.abs(this.input.state.cameraX) > 0.05 || Math.abs(this.input.state.cameraZ) > 0.05) {
       this.camera.addOrbit(-this.input.state.cameraX * dt * 1.6, -this.input.state.cameraZ * dt * 1.2);
     }
-    // Sub-stepped physics (3× per frame) — super tight collisions, no tunneling
-    if (this.mode === 'explore') {
-      const sub = Math.min(dt, 1 / 30) / 3;
-      const pe = this.scene.getPhysicsEngine();
-      for (let i = 0; i < 3; i++) pe?._step(sub);
-    }
+
     if (this.mode === 'welcome') {
       this.input.update(dt);
       this.character.setState('idle', 0, 'idle');
@@ -387,13 +391,13 @@ class App {
       this.updateController(dt);
       const p = this.playerProxy.position;
       this.world.update(dt, p.x);
-      this.camera.update(dt, new BABYLON.Vector3(p.x, p.y - 0.4, p.z), this.havok.getVelocity(this.playerBody).x * 0.3);
+      this.camera.update(dt, new BABYLON.Vector3(p.x, p.y + 1, p.z), this.pvel.x * 0.3);
     }
 
-    // AAA polish — contact shadow + rim light follow the hero
-    const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0.3, 0) : this.playerProxy.position;
-    this.polish.update(dt, pp, pp.y - (this.mode === 'welcome' ? 0.3 : 0.7),
-      this.mode === 'explore' && this.havok.getVelocity(this.playerBody).length() > 0.5);
+    // AAA polish — rim light follows the hero (real cast shadow via ShadowGenerator)
+    const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
+    this.polish.update(dt, pp, pp.y,
+      this.mode === 'explore' && this.pvel.length() > 0.5);
 
     this.fpsAcc += dt; this.fpsFrames++;
     if (this.fpsAcc >= 0.5) {

@@ -13,8 +13,7 @@ export class Polish {
   private camera: BABYLON.Camera;
   private pipeline: BABYLON.DefaultRenderingPipeline;
   private motes: BABYLON.ParticleSystem;
-  private contactShadow: BABYLON.Mesh;
-  private shadowMat: BABYLON.StandardMaterial;
+
   private rim!: BABYLON.PointLight;
   private fill!: BABYLON.HemisphericLight;
   private t = 0;
@@ -69,29 +68,8 @@ export class Polish {
     this.fill.groundColor = new BABYLON.Color3(0.12, 0.1, 0.08);
     this.fill.intensity = 0.28;
 
-    // ---- Contact shadow (soft blob under the character) ----
-    this.shadowMat = new BABYLON.StandardMaterial('contactShadowMat', scene);
-    this.shadowMat.diffuseColor = BABYLON.Color3.Black();
-    this.shadowMat.emissiveColor = BABYLON.Color3.Black();
-    this.shadowMat.alpha = 0.34;
-    this.shadowMat.disableLighting = true;
-    this.shadowMat.backFaceCulling = false;
-    // Radial-gradient alpha texture for a soft falloff
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = 128;
-    const ctx = cv.getContext('2d')!;
-    const g = ctx.createRadialGradient(64, 64, 2, 64, 64, 62);
-    g.addColorStop(0, 'rgba(0,0,0,1)');
-    g.addColorStop(0.5, 'rgba(0,0,0,0.6)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
-    const tex = new BABYLON.Texture(cv.toDataURL('image/png'), scene);
-    tex.hasAlpha = true;
-    this.shadowMat.opacityTexture = tex;
-    this.contactShadow = BABYLON.MeshBuilder.CreateGround('contactShadow', { width: 1.5, height: 1.1 }, scene);
-    this.contactShadow.material = this.shadowMat;
-    this.contactShadow.isPickable = false;
-    this.contactShadow.renderingGroupId = 0;
+    // Real cast shadows are handled by Environment's ShadowGenerator —
+    // the skinned hero mesh is registered as a caster. No fake blob shadow.
 
     // ---- Atmospheric floating motes ----
     this.motes = new BABYLON.ParticleSystem('atmosphere', 320, scene);
@@ -119,14 +97,9 @@ export class Polish {
     this.motes.start();
   }
 
-  /** Update the contact shadow + rim light to follow the player. */
-  public update(dt: number, playerPos: BABYLON.Vector3, groundY: number, moving: boolean) {
+  /** Update the rim light + atmosphere to follow the player. */
+  public update(dt: number, playerPos: BABYLON.Vector3, _groundY: number, _moving: boolean) {
     this.t += dt;
-    const lift = Math.max(0, playerPos.y - groundY);
-    this.contactShadow.position.set(playerPos.x, groundY + 0.02, playerPos.z);
-    const scale = 1 + Math.min(0.8, lift * 0.12);
-    this.contactShadow.scaling.set(scale, scale, 1);
-    this.shadowMat.alpha = moving ? 0.24 + Math.sin(this.t * 10) * 0.03 : 0.32;
     this.rim.position.set(playerPos.x - 2, playerPos.y + 3.5, playerPos.z + 5);
     this.motes.emitter = new BABYLON.Vector3(playerPos.x, 0, 0);
     // keep motes centered on the player as he explores
@@ -156,8 +129,6 @@ export class Polish {
   public getPipeline() { return this.pipeline; }
   public dispose() {
     this.motes.dispose();
-    this.contactShadow.dispose();
-    this.shadowMat.dispose();
     this.rim.dispose(); this.fill.dispose();
     this.pipeline.dispose();
   }
