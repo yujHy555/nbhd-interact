@@ -462,9 +462,13 @@ export class Character {
       }
     }
     if (!isFinite(sole)) return;
-    const deficit = surfaceY - sole;
-    // +1 cm safety so animated toes never dip below the inclined plane.
-    if (deficit > -0.12 && deficit < 0.5) this.root.position.y += deficit + 0.01;
+    // Only correct ACTUAL penetration on a slope. Applying this on flat
+    // ground every frame made the root follow the foot cycle → run jitter.
+    if (Math.abs(angle) < 0.02) return;
+    const penetration = surfaceY - sole;   // >0 means shoe is below the plane
+    if (penetration > 0 && penetration < 0.3) {
+      this.root.position.y += Math.min(penetration, 0.08) + 0.008;
+    }
   }
 
   /** Set the flip rotation about the waist (radians). */

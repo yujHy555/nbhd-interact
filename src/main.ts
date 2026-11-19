@@ -278,6 +278,15 @@ class App {
         cow.rotation.y = s.face;
         cow.isPickable = false;
         this.env.registerShadowCaster(cow);
+        // Solid body collider so the player cannot walk through the herd.
+        this.world.colliders.push({
+          x: s.x,
+          y: feetOffset,
+          z: s.z,
+          w: 2.3,
+          h: 1.45,
+          d: 0.85,
+        });
       });
     } catch (e) {
       console.warn('[Cow] background herd failed to load:', e);
