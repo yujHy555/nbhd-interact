@@ -249,16 +249,6 @@ class App {
     return best;
   }
 
-  /** Slope pitch (radians) to align the character with the surface underfoot. */
-  private slopeAngleAt(x: number, z: number, feetY: number): number {
-    for (const s of this.world.slopes) {
-      if (x < s.x - s.w / 2 || x > s.x + s.w / 2 ||
-          z < s.z - s.d / 2 || z > s.z + s.d / 2) continue;
-      if (Math.abs(this.slopeHeight(s, x) - feetY) < 0.18) return Math.atan2(s.y1 - s.y0, s.w);
-    }
-    return 0;
-  }
-
   /** Solid box overlapping the player's body → horizontal move blocked.
    *  Ramps are walkable, so they never block — except when they rise well
    *  above the feet (walking into the raised end from the side). */
@@ -380,10 +370,10 @@ class App {
     this.character.setFlip(0);
     if (landed) { this.audio.land(6); this.character.landingImpact(-8); this.camera.punch(3); }
 
-    // Visual root sits exactly at the FEET surface, and the body tilts to
-    // match the ramp underfoot so shoes and pose stay aligned with the slope.
+    // Visual root sits exactly at the FEET surface. No body tilt on slopes —
+    // rotating the body dipped the shoes below the surface and looked odd.
     this.character.setPosition(p.x, p.y, p.z);
-    this.character.setSlopeAngle(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0);
+    this.character.setSlopeAngle(0);
 
     // ---- Facing ----
     // The Mixamo rig faces +Z at rotation 0 (verified visually: at yaw 0 the

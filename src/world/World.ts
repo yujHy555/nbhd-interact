@@ -75,23 +75,20 @@ export class World {
   private build() {
     // ---- Welcome zone (0..70): material test area, hero starts on ground ----
     // Welcome zone stepping platforms
-    this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.0, x 8..12
-    this.addRamp(12, 1.0, 16, 1.6, 0, 4);                       // 8.5° up
-    this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.6, x 16..20
-    this.addRamp(20, 1.6, 23.5, 2.3, 0, 4);                     // 11.3° up
-    this.addPlatform(26, 1.8, 0, 5, 1, 4, [0.2, 0.9, 1]);      // top 2.3, x 23.5..28.5
-    this.addRamp(28.5, 2.3, 44, 2.7, 0, 4);                     // gentle bridge
+    this.addPlatform(10, 0.5, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.0
+    this.addPlatform(18, 1.1, 0, 4, 1, 4, [0.2, 0.9, 1]);      // top 1.6
+    this.addPlatform(26, 1.8, 0, 5, 1, 4, [0.2, 0.9, 1]);      // top 2.3
+    // Single showcase incline: exactly 30° (rise = 4·tan30° ≈ 2.309 m)
+    this.addRamp(30, 0, 34, 2.3094, 0, 6);
     this.addPlatform(47, 2.2, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 2.7
     this.addPlatform(58, 2.8, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 3.3
 
     // ---- What We Do zone (78..150): content cubes + platforms ----
     this.addPlatform(72, 1.0, 0, 6, 1, 5, [1, 0.78, 0.2]);
     this.addPlatform(84, 1.8, 0, 5, 1, 5, [1, 0.78, 0.2]);      // top 2.3
-    this.addRamp(86.5, 2.3, 93.5, 3.1, 0, 5);                   // 6.5° up
     this.addPlatform(96, 2.6, 0, 5, 1, 5, [1, 0.78, 0.2]);      // top 3.1
     this.addPlatform(120, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 3.5
     this.addPlatform(134, 3.6, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 4.1
-    this.addRamp(137, 4.1, 143, 3.5, 0, 5);                     // 5.7° down
     this.addPlatform(146, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 3.5
 
     // ---- Contact zone (156..200) ----
