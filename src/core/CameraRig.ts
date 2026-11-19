@@ -1,64 +1,58 @@
 import * as BABYLON from 'babylonjs';
 
-/** Cinematic side-scrolling follow camera with smooth tracking and look-ahead. */
+/** Cinematic side-scrolling follow camera with smooth tracking and look-ahead.
+ *
+ *  Driven through the ArcRotateCamera's alpha/beta/radius/target — writing
+ *  position directly is futile because the camera recomputes it from those
+ *  values on every render. Gamepad left stick changes alpha/beta (orbit),
+ *  right stick moves the character. */
 export class CameraRig {
   private camera: BABYLON.ArcRotateCamera;
-  private scene: BABYLON.Scene;
   private focus = new BABYLON.Vector3(0, 1.2, 0);
-  private current = new BABYLON.Vector3(-8, 4.5, -14);
   private shake = 0;
   private shakeAmp = 0;
-  public distance = 13;
-  public height = 4.6;
-  public sideOffset = -3.5;
-  public orbitYaw = 0;   // gamepad left stick rotates this
-  public orbitPitch = 0;
+  public distance = 16;
+  public orbitYaw = 0;   // gamepad left stick → camera yaw
+  public orbitPitch = 0; // gamepad left stick → camera pitch
+
   public addOrbit(dx: number, dy: number) {
-    this.orbitYaw += dx;
-    this.orbitPitch = BABYLON.Scalar.Clamp(this.orbitPitch + dy, -0.35, 0.45);
+    this.camera.alpha += dx;
+    this.camera.beta = BABYLON.Scalar.Clamp(this.camera.beta + dy, 0.25, 1.42);
+    this.orbitYaw = this.camera.alpha + Math.PI / 2;
+    this.orbitPitch = this.camera.beta - 1.15;
   }
 
   constructor(scene: BABYLON.Scene, canvas: HTMLCanvasElement) {
-    this.scene = scene;
-    // Use a FreeCamera-style TargetCamera we drive manually via position+target
-    this.camera = new BABYLON.ArcRotateCamera('cam', -Math.PI / 2, 1.15, 16, new BABYLON.Vector3(0, 1, 0), scene);
+    // alpha -π/2 puts the camera at -Z looking toward +Z (screen right = +X).
+    this.camera = new BABYLON.ArcRotateCamera('cam', -Math.PI / 2, 1.15, this.distance, new BABYLON.Vector3(0, 1, 0), scene);
     this.camera.lowerRadiusLimit = 6;
-    this.camera.upperRadiusLimit = 40;
+    this.camera.upperRadiusLimit = 26;
+    this.camera.lowerBetaLimit = 0.25;
+    this.camera.upperBetaLimit = 1.42;
     this.camera.wheelPrecision = 40;
     this.camera.attachControl(canvas, true);
+    // Our input layer owns orbit — remove Babylon's competing handlers.
     this.camera.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
+    this.camera.inputs.removeByType('ArcRotateCameraGamepadInput');
   }
 
   public getCamera() { return this.camera; }
 
   public punch(amt = 6) { this.shake = 0.25; this.shakeAmp = amt; }
 
-  /** Snap instantly to a target (used on zone level load). */
+  /** Snap instantly to a target (used when exploration starts). */
   public snap(target: BABYLON.Vector3) {
-    this.focus.copyFrom(target);
-    this.current.set(target.x + this.sideOffset, target.y + this.height, -this.distance);
+    this.focus.set(target.x, target.y + 0.9, target.z);
+    this.camera.alpha = -Math.PI / 2;
+    this.camera.beta = 1.15;
+    this.camera.radius = this.distance;
+    this.orbitYaw = 0;
+    this.orbitPitch = 0;
     this.camera.setTarget(this.focus);
-    this.camera.position.copyFrom(this.current);
   }
 
   public update(dt: number, target: BABYLON.Vector3, lookAhead = 0) {
-    // Desired: side-scrolling 2.5D view (camera in front at -Z, offset left)
-    // Base offset, then rotate around the target by the gamepad orbit angles
-    const ox = this.sideOffset + lookAhead * 1.5;
-    const oy = this.height;
-    const oz = -this.distance;
-    const cy = Math.cos(this.orbitYaw), sy = Math.sin(this.orbitYaw);
-    const rx = ox * cy - oz * sy;
-    const rz = ox * sy + oz * cy;
-    const desired = new BABYLON.Vector3(
-      target.x + rx,
-      target.y + oy + this.orbitPitch * 6,
-      rz,
-    );
     const k = Math.min(1, dt * 4.5);
-    this.current.x += (desired.x - this.current.x) * k;
-    this.current.y += (desired.y - this.current.y) * k;
-    this.current.z += (desired.z - this.current.z) * k;
     this.focus.x += (target.x + lookAhead - this.focus.x) * k;
     this.focus.y += (target.y + 0.9 - this.focus.y) * k;
     this.focus.z += (target.z - this.focus.z) * k;
@@ -66,10 +60,10 @@ export class CameraRig {
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt);
       const f = this.shake * this.shakeAmp * 0.02;
-      this.current.x += (Math.random() - 0.5) * f;
-      this.current.y += (Math.random() - 0.5) * f;
+      this.focus.x += (Math.random() - 0.5) * f;
+      this.focus.y += (Math.random() - 0.5) * f;
     }
-    this.camera.position.copyFrom(this.current);
+    this.camera.radius += (this.distance - this.camera.radius) * k;
     this.camera.setTarget(this.focus);
   }
 }

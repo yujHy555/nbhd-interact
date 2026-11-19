@@ -24,6 +24,7 @@ export interface MixamoBinding {
   root: BABYLON.TransformNode;
   animationGroups: BABYLON.AnimationGroup[];
   play(name: string, loop?: boolean): boolean;
+  setCurrentSpeed(ratio: number): void;
   stopAll(): void;
 }
 
@@ -32,7 +33,8 @@ export interface MixamoBinding {
  * directional locomotion (forward/back/strafe), smooth animation blending,
  * secondary motion, and a Mixamo/glTF binding path for production mocap.
  *
- * Rig faces -Z. All limbs hang down; elbow/knee bend along +X (forward).
+ * Procedural rig faces -Z. The imported Mixamo rig faces +Z (handled by the
+ * controller's heading convention). All limbs hang down.
  */
 export class Character {
   public root: BABYLON.TransformNode;
@@ -283,13 +285,23 @@ export class Character {
     this.t += dt;
     this.blend = Math.min(1, this.blend + dt * 9);
     this.heading = heading;
-    // Face movement heading (character faces -Z at heading 0)
+    // Smoothly turn toward the requested heading (Mixamo faces +Z at 0)
     let dh = heading - this.root.rotation.y;
     while (dh > Math.PI) dh -= Math.PI * 2;
     while (dh < -Math.PI) dh += Math.PI * 2;
     this.root.rotation.y += dh * Math.min(1, dt * 12);
 
-    if (this.mixamo) { this.updateSecondaryOnly(dt); return; }
+    if (this.mixamo) {
+      // Foot-lock: playback rate tracks real ground speed so the feet do not
+      // slide across the floor. A backwards move reverses the same cycle.
+      let nominal = 1;
+      if (this.state === 'run') nominal = 6.2;
+      else if (this.state === 'walk' || this.state === 'strafe') nominal = 3.0;
+      const ratio = nominal > 1 ? Math.min(1.6, Math.max(0.35, speed / nominal)) : 1;
+      this.mixamo.setCurrentSpeed(this.dir === 'back' ? -ratio : ratio);
+      this.updateSecondaryOnly(dt);
+      return;
+    }
 
     const moving = this.state === 'walk' || this.state === 'run' || this.state === 'strafe';
     const rate = this.state === 'run' ? 11 : this.state === 'walk' ? 7 : this.state === 'strafe' ? 7.5 : 0;

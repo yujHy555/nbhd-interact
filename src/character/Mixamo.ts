@@ -18,7 +18,7 @@ export class MixamoController implements MixamoBinding {
   private scene: BABYLON.Scene;
   private clipMap = new Map<string, BABYLON.AnimationGroup>();
   private current: BABYLON.AnimationGroup | null = null;
-  private fade = 0;
+  private fadeObs: BABYLON.Observer<BABYLON.Scene> | null = null;
   private loaded = false;
 
   constructor(scene: BABYLON.Scene) {
@@ -121,43 +121,74 @@ export class MixamoController implements MixamoBinding {
     return null;
   }
 
-  /** Play a clip with a 0.25 s crossfade. */
+  /** Play a clip with a real, interruptible crossfade.
+   *  The previous bug set group.weight = 1 immediately after starting the
+   *  blend, so the crossfade observer fought it and the pose froze. */
   public play(name: string, loop = true): boolean {
     if (!this.loaded) return false;
     const group = this.resolve(name);
     if (!group) return false;
     if (this.current === group) return true;
 
-    if (this.current) {
-      const old = this.current;
-      this.current = group;
-      this.fade = 0;
-      // Blend out old, blend in new
-      const oldWeight = old.weight ?? 1;
-      const newWeight = group.weight ?? 0;
-      const obs = this.scene.onBeforeRenderObservable.add(() => {
-        this.fade += this.scene.getEngine().getDeltaTime() / 1000 / 0.25;
-        const t = Math.min(1, this.fade);
-        old.weight = oldWeight * (1 - t);
-        group.weight = newWeight + (1 - newWeight) * t;
-        if (t >= 1) {
-          old.stop();
-          this.scene.onBeforeRenderObservable.remove(obs);
-        }
-      });
+    // Cancel an in-flight fade so rapid transitions never stack observers.
+    if (this.fadeObs) {
+      this.scene.onBeforeRenderObservable.remove(this.fadeObs);
+      this.fadeObs = null;
     }
+    const old = this.current;
+    // Silence anything that is neither the outgoing nor incoming clip —
+    // otherwise several groups drive the same bones at once and the mesh
+    // freezes or jitters between poses.
+    for (const g of this.animationGroups) {
+      if (g !== old && g !== group) { g.stop(); g.weight = 0; }
+    }
+    group.speedRatio = 1;
+
+    if (!old) {
+      group.start(loop);
+      group.weight = 1;
+      this.current = group;
+      return true;
+    }
+
+    const from = old.weight ?? 1;
+    old.weight = from;
     group.start(loop);
-    group.weight = 1;
+    group.weight = 0;
+    let t = 0;
+    const FADE = 0.16; // seconds — snappy, AAA feel
+    this.fadeObs = this.scene.onBeforeRenderObservable.add(() => {
+      t += this.scene.getEngine().getDeltaTime() / 1000 / FADE;
+      const k = Math.min(1, t);
+      const e = k * k * (3 - 2 * k); // smoothstep
+      old.weight = from * (1 - e);
+      group.weight = e;
+      if (k >= 1) {
+        old.stop();
+        old.weight = 0;
+        this.scene.onBeforeRenderObservable.remove(this.fadeObs!);
+        this.fadeObs = null;
+      }
+    });
     this.current = group;
     return true;
   }
 
+  /** Scale the ACTIVE clip's playback rate. Matching this to ground speed
+   *  removes foot sliding — the legs move as fast as the character travels. */
+  public setCurrentSpeed(ratio: number) {
+    if (!this.current) return;
+    const r = Math.max(-2, Math.min(2, ratio));
+    if (Math.abs(this.current.speedRatio - r) > 0.01) this.current.speedRatio = r;
+  }
+
   public setSpeed(speed: number) {
-    for (const g of this.animationGroups) g.speedRatio = speed;
+    if (this.current) this.current.speedRatio = speed;
   }
 
   public stopAll() {
-    for (const g of this.animationGroups) g.stop();
+    if (this.fadeObs) { this.scene.onBeforeRenderObservable.remove(this.fadeObs); this.fadeObs = null; }
+    for (const g of this.animationGroups) { g.stop(); g.weight = 0; g.speedRatio = 1; }
     this.current = null;
   }
 

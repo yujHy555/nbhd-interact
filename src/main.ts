@@ -214,19 +214,42 @@ class App {
     const s = this.input.state;
     const v = this.pvel, p = this.ppos;
     const GRAVITY = 22;
-    const walking = s.axisX !== 0 || s.axisZ !== 0;
-    const running = walking && (s.run || this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
-    const maxSpeed = (running ? 6.2 : walking ? 3.0 : 0) * 1;
 
-    // ---- Planar movement (camera-relative: A/D world X, W/S depth) ----
+    // ---- Camera-relative movement basis ----
+    // A/D are always screen-left/right and W/S always into/out of the screen,
+    // even after the left stick orbits the camera. This is the standard for a
+    // third-person controller (the old world-locked axes broke after orbiting).
+    const cam = this.camera.getCamera();
+    const fwd = cam.getTarget().subtract(cam.position);
+    fwd.y = 0;
+    if (fwd.lengthSquared() < 1e-6) fwd.set(0, 0, 1);
+    fwd.normalize();
+    const right = BABYLON.Vector3.Cross(BABYLON.Axis.Y, fwd).normalize();
+
     const ax = s.axisX, az = s.axisZ;
-    const accel = this.grounded ? 20 : 10;
-    if (Math.abs(ax) > 0.05) v.x += (ax * maxSpeed - v.x) * Math.min(1, accel * dt);
-    else v.x *= Math.pow(0.001, dt);
-    if (Math.abs(az) > 0.05) v.z += (az * maxSpeed * 0.7 - v.z) * Math.min(1, accel * dt);
-    else v.z *= Math.pow(0.02, dt);
+    let dx = right.x * ax + fwd.x * az;
+    let dz = right.z * ax + fwd.z * az;
+    const mag = Math.hypot(dx, dz);
+    if (mag > 1) { dx /= mag; dz /= mag; }   // no diagonal speed boost
+    const moveInput = mag > 0.08;
 
-    // ---- SINGLE JUMP (coyote + buffer) ----
+    const running = moveInput && (s.run || this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
+    const maxSpeed = running ? 6.2 : 3.0;
+
+    // ---- Acceleration & crisp braking (locks to position on release) ----
+    // moveTowards gives a linear, predictable stop — no exponential drift.
+    const accel = this.grounded ? 30 : 10;
+    const step = accel * dt;
+    const tx = moveInput ? dx * maxSpeed : 0;
+    const tz = moveInput ? dz * maxSpeed : 0;
+    v.x += Math.max(-step, Math.min(step, tx - v.x));
+    v.z += Math.max(-step, Math.min(step, tz - v.z));
+    if (!moveInput) {
+      if (Math.abs(v.x) < 0.02) v.x = 0;
+      if (Math.abs(v.z) < 0.02) v.z = 0;
+    }
+
+    // ---- Single jump (coyote + input buffer) ----
     this.coyote = this.grounded ? 0.12 : Math.max(0, this.coyote - dt);
     this.jumpBuffer = s.jumpPressed ? 0.14 : Math.max(0, this.jumpBuffer - dt);
     if (this.jumpBuffer > 0 && this.coyote > 0) {
@@ -235,7 +258,7 @@ class App {
       this.jumpBuffer = 0; this.coyote = 0; this.grounded = false;
     }
 
-    // ---- Sub-stepped integration: ground snap + wall blocks ----
+    // ---- Sub-stepped integration: wall blocks + ground snap ----
     const wasGrounded = this.grounded;
     let landed = false;
     const steps = Math.max(2, Math.min(12, Math.ceil((Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z)) * dt / 0.15)));
@@ -248,58 +271,51 @@ class App {
       const nz = p.z + v.z * sdt;
       const ny = p.y + v.y * sdt;
 
-      // Horizontal collision FIRST — applies while grounded too (the old code
-      // let the landing branch teleport p.x/p.z past platform walls).
       let cx = p.x, cz = p.z;
-      if (this.wallAt(nx, p.z, p.y, radius)) v.x *= 0.15;
-      else cx = nx;
-      if (this.wallAt(cx, nz, p.y, radius)) v.z *= 0.15;
-      else cz = nz;
+      if (this.wallAt(nx, p.z, p.y, radius)) v.x *= 0.15; else cx = nx;
+      if (this.wallAt(cx, nz, p.y, radius)) v.z *= 0.15; else cz = nz;
 
-      // Landing: only while descending, snap feet to the highest surface below
       const surf = this.surfaceAt(cx, cz, p.y);
       if (v.y <= 0 && ny <= surf) {
         if (!wasGrounded && v.y < -1.5) landed = true;
-        p.y = surf;
-        v.y = 0; this.grounded = true;
+        p.y = surf; v.y = 0; this.grounded = true;
       } else {
-        // Ground clamp (never below floor)
         p.y = Math.max(0, ny);
         if (p.y <= 0) { p.y = 0; v.y = 0; this.grounded = true; }
       }
       p.x = cx; p.z = cz;
     }
-    // Safety
     if (p.y < -8) { p.set(2.4, 0, 0); v.set(0, 0, 0); }
     p.x = Math.max(-3, Math.min(198, p.x));
     p.z = Math.max(-3.2, Math.min(3.2, p.z));
 
-    // Reset flip (single jump only)
     this.character.setFlip(0);
-
-    // Landing feedback
     if (landed) { this.audio.land(6); this.character.landingImpact(-8); this.camera.punch(3); }
 
-    // Sync visual — root at FEET, so shoes sit exactly on the surface
+    // Visual root sits at the FEET
     this.character.setPosition(p.x, p.y, p.z);
 
-    // Facing: +X is screen-right (confirmed via camera view matrix)
-    if (Math.abs(s.axisX) > 0.1 || Math.abs(s.axisZ) > 0.1) {
-      this.facing = Math.atan2(-s.axisX, -s.axisZ);
-    }
+    // ---- Facing ----
+    // The Mixamo rig faces -Z at rotation 0 (verified from its arm bones:
+    // at yaw -90° the rig's forward is +X). atan2(-dx,-dz) therefore points
+    // her exactly along the desired camera-relative travel direction.
+    if (moveInput) this.facing = Math.atan2(-dx, -dz);
 
     const crouching = (this.keys.has('ControlLeft') || this.keys.has('KeyC')) && this.grounded;
     const planSpeed = Math.hypot(v.x, v.z);
+    // Hysteresis stops idle/walk flipping back and forth at the threshold,
+    // which was restarting the clip mid-stride ("freezing" animation).
+    const idleThreshold = this.character.state === 'idle' ? 0.38 : 0.16;
     let state: AnimState;
     let dir: MoveDir = 'idle';
-    if (!this.grounded) state = v.y > 0.8 ? 'jump' : 'fall';
+    if (!this.grounded) state = v.y > 0.6 ? 'jump' : 'fall';
     else if (crouching) state = 'crouch';
-    else if (planSpeed > 0.25) {
-      const fx = -Math.sin(this.facing), fz = -Math.cos(this.facing);
+    else if (planSpeed > idleThreshold) {
+      const fx = -Math.sin(this.facing), fz = -Math.cos(this.facing); // model forward = (-sinθ, -cosθ)
       const dot = (v.x * fx + v.z * fz) / Math.max(planSpeed, 0.001);
-      if (dot > 0.5) { state = running ? 'run' : 'walk'; dir = 'forward'; }
-      else if (dot < -0.5) { state = 'walk'; dir = 'back'; }
-      else { state = 'strafe'; dir = v.x > 0 ? 'right' : 'left'; }
+      if (dot > 0.45) { state = running ? 'run' : 'walk'; dir = 'forward'; }
+      else if (dot < -0.45) { state = 'walk'; dir = 'back'; }
+      else { state = 'walk'; dir = (v.x * right.x + v.z * right.z) > 0 ? 'right' : 'left'; }
     } else state = 'idle';
 
     this.character.setState(state, v.y, dir);
