@@ -79,9 +79,8 @@ export class Character {
   private eyeMat!: BABYLON.StandardMaterial;
   private pupilMat!: BABYLON.StandardMaterial;
   private meshes: BABYLON.Mesh[] = [];
-  private footOffset = 0.13; // ankle bone → sole distance, calibrated at bind time
-  private footPitch = 0;     // slope angle to conform the shoes to (radians)
-  private footPitchAxis = new BABYLON.Vector3(0, 0, 1);
+  private footOffset = 0.13; // ankle bone → sole, calibrated at bind time
+
 
   constructor(scene: BABYLON.Scene) {
     this.scene = scene;
@@ -93,31 +92,6 @@ export class Character {
     this.flipPivot = new BABYLON.TransformNode('characterFlipPivot', scene);
     this.flipPivot.parent = this.headingPivot;
     this.flipPivot.position.y = 0.96; // waist / centre of mass
-    // Apply the slope conform rotation AFTER animations each frame, otherwise
-    // the Mixamo clip overwrites the foot bones during rendering.
-    scene.onAfterAnimationsObservable.add(() => {
-      if (!this.mixamo || Math.abs(this.footPitch) < 0.005) return;
-      // World-space slope tilt, conjugated into each foot bone's parent space
-      // so the sole conforms to the incline regardless of the rig's local axes.
-      const W = BABYLON.Quaternion.RotationAxis(this.footPitchAxis, this.footPitch);
-      for (const m of this.mixamo.root.getChildMeshes(false)) {
-        const sk = (m as BABYLON.Mesh).skeleton;
-        if (!sk) continue;
-        sk.computeAbsoluteMatrices();
-        for (const boneName of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
-          const b = sk.bones.find((x) => x.name === boneName);
-          if (!b || !b.rotationQuaternion) continue;
-          const parent = b.getParent();
-          const parentQ = parent
-            ? BABYLON.Quaternion.FromRotationMatrix(parent.getAbsoluteMatrix())
-            : BABYLON.Quaternion.Identity();
-          // Conjugate the world tilt into the bone's parent space, then apply
-          // it on top of the animation's current foot rotation.
-          const conj = BABYLON.Quaternion.Inverse(parentQ).multiply(W).multiply(parentQ);
-          b.rotationQuaternion = conj.multiply(b.rotationQuaternion);
-        }
-      }
-    });
     this.buildMaterials();
     this.buildRig();
     // The procedural rig is only a fallback. Hide it from the very first
@@ -285,13 +259,12 @@ export class Character {
       binding.root.position.y -= (low - rootY); // feet now at root.y (local 0)
       binding.root.computeWorldMatrix(true);
       for (const m of meshes) m.computeWorldMatrix(true);
-      // Calibrate ankle-bone → sole offset from the seated rest pose so the
-      // per-frame foot contact check can use the ACTUAL animated foot bones.
+      // Calibrate ankle → sole distance for the slope foot-contact check.
       const skinned = meshes.find((m) => (m as BABYLON.Mesh).skeleton) as BABYLON.Mesh | undefined;
       if (skinned && skinned.skeleton) {
         let ankle = Infinity;
-        for (const boneName of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
-          const b = skinned.skeleton.bones.find((x) => x.name === boneName);
+        for (const n of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
+          const b = skinned.skeleton.bones.find((x) => x.name === n);
           if (b) ankle = Math.min(ankle, BABYLON.Vector3.TransformCoordinates(b.getAbsolutePosition(), skinned.getWorldMatrix()).y);
         }
         if (isFinite(ankle)) this.footOffset = Math.max(0.02, ankle - this.root.getAbsolutePosition().y);
@@ -466,40 +439,28 @@ export class Character {
    *  Applied above the yaw pivot so it is a true world-space tilt. */
   public setSlopeAngle(angle: number) { this.slopePivot.rotation.z = -angle; }
 
-  /** Tilt the body to an incline while keeping the shoes exactly on the
-   *  surface. Tilting around the root dips one shoe; measure the real skinned
-   *  feet afterwards and lift the root by the exact deficit. */
+  /** Keep the body upright and plant the shoes on an inclined surface by
+   *  measuring the real animated ankle bones and lifting the root by the exact
+   *  penetration. No bone rotation (that pitched the whole rig) and no per-frame
+   *  work on flat ground (that caused run jitter). */
   public alignToSlope(angle: number, surfaceY: number) {
-    // Keep the torso upright — only the feet are planted on the surface via
-    // the root lift below. Tilting the whole body looks like falling over.
-    this.slopePivot.rotation.z = 0;
-    this.footPitch = angle;
-    // Lateral axis (perpendicular to travel): cross(forward, up) = (-cosθ,0,sinθ).
-    // At 90° facing (+X) this is world +Z — the correct ramp pitch axis.
-    this.footPitchAxis.set(-Math.cos(this.heading), 0, Math.sin(this.heading));
-    if (!this.mixamo) return;
-    // Measure the real animated ankle bones (the skinned mesh's bounding box
-    // is bind-pose only and does not follow the walk cycle).
+    this.slopePivot.rotation.z = 0; // torso always upright
+    if (!this.mixamo || Math.abs(angle) < 0.02) return;
     let sole = Infinity;
     for (const m of this.mixamo.root.getChildMeshes(false)) {
       const sk = (m as BABYLON.Mesh).skeleton;
       if (!sk) continue;
       m.computeWorldMatrix(true);
-      for (const boneName of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
-        const b = sk.bones.find((x) => x.name === boneName);
+      for (const n of ['mixamorig:LeftFoot', 'mixamorig:RightFoot']) {
+        const b = sk.bones.find((x) => x.name === n);
         if (!b) continue;
         const y = BABYLON.Vector3.TransformCoordinates(b.getAbsolutePosition(), m.getWorldMatrix()).y;
         sole = Math.min(sole, y - this.footOffset);
       }
     }
     if (!isFinite(sole)) return;
-    // Only correct ACTUAL penetration on a slope. Applying this on flat
-    // ground every frame made the root follow the foot cycle → run jitter.
-    if (Math.abs(angle) < 0.02) return;
-    const penetration = surfaceY - sole;   // >0 means shoe is below the plane
-    if (penetration > 0 && penetration < 0.3) {
-      this.root.position.y += Math.min(penetration, 0.08) + 0.008;
-    }
+    const penetration = surfaceY - sole;
+    if (penetration > 0 && penetration < 0.3) this.root.position.y += Math.min(penetration, 0.12) + 0.008;
   }
 
   /** Set the flip rotation about the waist (radians). */

@@ -6,11 +6,14 @@ export interface BoxCollider { x: number; y: number; z: number; w: number; h: nu
 export interface SlopeCollider { x: number; z: number; w: number; d: number; y0: number; y1: number; }
 export interface Pickup { mesh: BABYLON.Mesh; pos: BABYLON.Vector3; collected: boolean; phase: number; }
 export interface ZoneMarker { x: number; name: string; }
+/** A conveyor belt that carries the player along +X when standing on it. */
+export interface Travelator { x: number; z: number; w: number; d: number; top: number; speed: number; }
 
 /** Continuous horizontal prototype world — three zones, metric scale. */
 export class World {
   public colliders: BoxCollider[] = [];
   public slopes: SlopeCollider[] = [];
+  public travelators: Travelator[] = [];
   public pickups: Pickup[] = [];
   public zones: ZoneMarker[] = [
     { x: 0, name: 'WELCOME' },
@@ -111,6 +114,54 @@ export class World {
     return deck;
   }
 
+  /** Conveyor belt: a low slab with a scrolling chevron belt material and
+   *  end rollers. Standing on it carries the player along +X. */
+  private addTravelator(x: number, z: number, w: number, d: number, speed: number) {
+    const top = 0.22;
+    const deck = BABYLON.MeshBuilder.CreateBox('travelator', { width: w, height: top, depth: d }, this.scene);
+    deck.position.set(x, top / 2, z);
+    deck.receiveShadows = true;
+    this.colliders.push({ x, y: top / 2, z, w, h: top, d });
+
+    // Belt material with animated scrolling stripes
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 128;
+    const ctx = cv.getContext('2d')!;
+    ctx.fillStyle = '#2b3238'; ctx.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 128; i += 32) {
+      ctx.fillStyle = '#48525b';
+      ctx.fillRect(i, 0, 6, 128);
+      ctx.fillStyle = '#1c2126';
+      ctx.fillRect(i + 6, 0, 4, 128);
+    }
+    const tex = new BABYLON.Texture(cv.toDataURL(), this.scene);
+    tex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    tex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    tex.uScale = w / 1.5;
+    this.beltTextures.push(tex);
+    const belt = new BABYLON.PBRMaterial('travelatorBelt', this.scene);
+    belt.albedoTexture = tex;
+    belt.metallic = 0.2; belt.roughness = 0.7;
+    deck.material = belt;
+
+    // End rollers + hazard side rails
+    const metal = this.mats.pbr('travelatorMetal', [0.16, 0.2, 0.24], 0.7, 0.4);
+    [-1, 1].forEach((side) => {
+      const roller = BABYLON.MeshBuilder.CreateCylinder('travelatorRoller', { diameter: top * 1.5, height: d, tessellation: 20 }, this.scene);
+      roller.position.set(x + side * w / 2, top / 2, z);
+      roller.rotation.x = Math.PI / 2;
+      roller.material = metal;
+      roller.receiveShadows = true;
+      const rail = BABYLON.MeshBuilder.CreateBox('travelatorRail', { width: w, height: 0.14, depth: 0.14 }, this.scene);
+      rail.position.set(x, top + 0.24, z + side * (d / 2 - 0.07));
+      rail.material = this.mats.matte('travelatorRailMat', [0.95, 0.72, 0.12]);
+      rail.receiveShadows = true;
+    });
+    this.travelators.push({ x, z, w, d, top, speed });
+  }
+
+  private beltTextures: BABYLON.Texture[] = [];
+
   private build() {
     // ---- Welcome zone (0..70): material test area, hero starts on ground ----
     // Welcome zone stepping platforms
@@ -123,9 +174,12 @@ export class World {
     this.addPlatform(47, 2.2, 0, 6, 1, 4, [0.2, 0.9, 1]);      // top 2.7
     // Road section occupies x=52..92 — no platforms on or with the road.
 
+    // ---- Travelator (conveyor) section x=94..108 — after the road ----
+    this.addTravelator(101, 0, 14, 5, 3.2);
+
     // ---- What We Do zone (78..150): content cubes + platforms ----
     // Keep x=52..92 clear for the modular road.
-    this.addPlatform(96, 2.6, 0, 5, 1, 5, [1, 0.78, 0.2]);      // top 3.1
+    this.addPlatform(116, 2.6, 0, 5, 1, 5, [1, 0.78, 0.2]);     // top 3.1
     this.addPlatform(120, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 3.5
     this.addPlatform(134, 3.6, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 4.1
     this.addPlatform(146, 3.0, 0, 6, 1, 5, [1, 0.78, 0.2]);     // top 3.5
@@ -172,8 +226,19 @@ export class World {
     this.signs.push(panel);
   }
 
+  /** Belt speed affecting the player at the given feet position (world +X). */
+  public travelatorSpeedAt(x: number, z: number, feetY: number): number {
+    for (const t of this.travelators) {
+      if (x > t.x - t.w / 2 && x < t.x + t.w / 2 &&
+          z > t.z - t.d / 2 && z < t.z + t.d / 2 &&
+          Math.abs(feetY - t.top) < 0.25) return t.speed;
+    }
+    return 0;
+  }
+
   public update(dt: number, playerX: number) {
     this.t += dt;
+    for (const tex of this.beltTextures) tex.uOffset -= dt * this.travelators[0].speed / 1.5;
     for (const p of this.pickups) {
       if (p.collected) continue;
       p.mesh.rotation.y += dt * 1.8;

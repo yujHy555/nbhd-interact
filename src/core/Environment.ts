@@ -29,7 +29,7 @@ export class Environment {
     // so the 4096×2048 source panorama stays crisp on screen.
     this.envTexture = new BABYLON.EquiRectangularCubeTexture(skyUrl, scene, 512, false, false);
     scene.environmentTexture = this.envTexture as any;
-    scene.environmentIntensity = 0.75; // less ambient lift → stronger contrast
+    scene.environmentIntensity = 0.92; // bright, natural ambient
     scene.ambientColor = new BABYLON.Color3(0.10, 0.12, 0.16);
 
     // Visible background: the full 4096×2048 panorama mapped directly onto a
@@ -59,22 +59,25 @@ export class Environment {
     this.sun.diffuse = new BABYLON.Color3(1.0, 0.96, 0.88);
     this.sun.specular = new BABYLON.Color3(1, 0.98, 0.92);
     this.shadowGen = new BABYLON.ShadowGenerator(2048, this.sun);
-    this.shadowGen.usePercentageCloserFiltering = true;
-    this.shadowGen.filteringQuality = BABYLON.ShadowGenerator.QUALITY_HIGH;
-    this.shadowGen.darkness = 0.02; // deep, natural, clearly visible shadows
-    this.shadowGen.bias = 0.0008;
-    this.shadowGen.normalBias = 0.01;
+    this.shadowGen.useBlurExponentialShadowMap = true;
+    this.shadowGen.blurKernel = 24;
+    this.shadowGen.darkness = 0.12; // strong, natural, always visible
+    this.shadowGen.bias = 0.001;
+    this.shadowGen.normalBias = 0.02;
+    this.sun.autoUpdateExtends = true;
+    this.sun.shadowMinZ = 1;
+    this.sun.shadowMaxZ = 320;
 
     // ---- Fill light ----
     this.hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0, 1, 0), scene);
-    this.hemi.intensity = 0.32; // lower fill so sun shadows read strongly
+    this.hemi.intensity = 0.55; // balanced fill — scene stays bright
     this.hemi.diffuse = new BABYLON.Color3(0.65, 0.78, 0.95);
     this.hemi.groundColor = new BABYLON.Color3(0.18, 0.16, 0.14);
 
     // ---- Ground (real-world metric scale) ----
     this.ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 400, height: 80 }, scene);
     const groundMat = new BABYLON.PBRMaterial('groundMat', scene);
-    groundMat.albedoColor = new BABYLON.Color3(0.24, 0.26, 0.3);
+    groundMat.albedoColor = new BABYLON.Color3(0.56, 0.58, 0.62); // lighter grey
     groundMat.metallic = 0.05;
     groundMat.roughness = 0.82;
     groundMat.environmentIntensity = 0.6;
@@ -83,9 +86,9 @@ export class Environment {
     const TILE = 64;
     const gridTex = new BABYLON.DynamicTexture('gridTile', { width: TILE, height: TILE }, scene, true);
     const gctx = gridTex.getContext();
-    gctx.fillStyle = '#3b4048';
+    gctx.fillStyle = '#9aa0a6'; // lighter grey floor
     gctx.fillRect(0, 0, TILE, TILE);
-    gctx.strokeStyle = 'rgba(150,170,195,0.55)';
+    gctx.strokeStyle = 'rgba(120,130,140,0.55)';
     gctx.lineWidth = 2;
     gctx.strokeRect(1, 1, TILE - 2, TILE - 2);
     gridTex.update();

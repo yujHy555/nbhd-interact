@@ -154,7 +154,8 @@ class App {
       if (m.name === 'skyBox') continue;
       m.receiveShadows = true;
       if (m.name === 'platform' || m.name === 'ramp' || m.name === 'rampRail' ||
-          m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'protoCube') {
+          m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'protoCube' ||
+          m.name === 'travelator' || m.name === 'travelatorRoller' || m.name === 'travelatorRail') {
         this.env.registerShadowCaster(m as BABYLON.Mesh);
       }
     }
@@ -434,6 +435,12 @@ class App {
       if (Math.abs(v.z) < 0.02) v.z = 0;
     }
 
+    // ---- Travelator carry: conveyor pushes the player along +X ----
+    const belt = this.world.travelatorSpeedAt(p.x, p.z, p.y);
+    if (belt > 0 && this.grounded && s.axisX <= 0.05) {
+      v.x = Math.min(belt, v.x + belt * Math.min(1, dt * 4));
+    }
+
     // ---- Double jump (coyote + input buffer) ----
     // Both jumps reuse the SAME Mixamo jump clip; the second one launches
     // higher and adds a small directional boost + camera kick for a snappier,
@@ -552,9 +559,6 @@ class App {
       }
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
-    // Keep the directional light's shadow frustum centred on the player so
-    // cast shadows stay natural and visible everywhere in the level.
-    this.env.sun.position.set(pp.x + 60, 120, -60);
     this.drone.update(dt, pp);
     this.polish.update(dt, pp, pp.y, this.mode === 'explore' && this.pvel.length() > 0.5);
     this.minimap?.update(pp.x, pp.z, this.mode === 'welcome' ? Math.PI / 2 : this.facing);
