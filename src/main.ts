@@ -122,6 +122,11 @@ class App {
     const heroLoad = this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
       if (ok) {
         this.character.bindMixamo(this.mixamo);
+        // The Sketchfab GLB bundles an orphaned 312 m backdrop plane that
+        // floated in the sky as a yellow/black barrier. Hide any such plane.
+        for (const m of this.scene.meshes) {
+          if (/^Plane_Material/.test(m.name) || m.name === 'Plane') m.setEnabled(false);
+        }
         // Bind the newly-loaded hero to the drone scan overlay (if present).
         const hero = this.mixamo.root.getChildMeshes(false).find((m) => m instanceof BABYLON.Mesh) as BABYLON.Mesh | undefined;
         if (hero && this.drone) this.drone.bindTarget(hero);
@@ -237,7 +242,7 @@ class App {
     // additive shaders would throw broken shadows).
     const skip = (n: string) =>
       n === 'skyBox' || n === 'ground' || n === '__root__' || n === 'sciFiBuildingSrc' ||
-      n === 'portalVeil' ||
+      n === 'portalVeil' || n === 'zonePost' ||
       /^drone(BodyGrid|ScanCone|ScanRing|Halo|Lens|LED|CPULED|Core|Rotor|RotorRing)/.test(n);
     for (const m of this.scene.meshes) {
       if (m.name === 'skyBox') continue;
