@@ -254,11 +254,11 @@ export class Drone {
       this.rotors.push(rotor);
     }
 
-    // Flashing LED beacons around the hull — emission-shader showcase
-    this.ledMat = this.emissive('droneLED', '#ff2a3a');
+    // Flashing LED beacons around the hull — small cyan accents
+    this.ledMat = this.emissive('droneLED', '#5ce1e6');
     for (let i = 0; i < 8; i++) {
       const a = i * Math.PI / 4;
-      const led = BABYLON.MeshBuilder.CreateBox('droneLED', { width: 0.09, height: 0.05, depth: 0.05 }, this.scene);
+      const led = BABYLON.MeshBuilder.CreateBox('droneLED', { width: 0.05, height: 0.03, depth: 0.05 }, this.scene);
       led.position.set(Math.cos(a) * 0.55, -0.05, Math.sin(a) * 0.55);
       led.rotation.y = -a;
       led.material = this.ledMat;
@@ -300,12 +300,6 @@ export class Drone {
     spinLight.diffuse = BABYLON.Color3.FromHexString('#5ce1e6');
     spinLight.intensity = 0.8; spinLight.range = 6;
     spinLight.parent = this.root;
-
-    // Underbody scan lens
-    const lens = BABYLON.MeshBuilder.CreateCylinder('droneLens', { diameter: 0.26, height: 0.09, tessellation: 24 }, this.scene);
-    lens.position.y = -0.21;
-    lens.material = this.emissive('droneLensMat', '#ff2a3a');
-    lens.parent = this.root;
 
     // Red scan cone (custom emission shader, additive)
     this.cone = BABYLON.MeshBuilder.CreateCylinder('droneScanCone', {
@@ -372,14 +366,17 @@ export class Drone {
     this.bodyGrid.material = this.bodyGridMat;
     this.bodyGrid.isPickable = false;
     this.bodyGrid.renderingGroupId = 1;
-    // A mesh clone inherits shadow-caster registration and the stale 83 m
-    // bounding box from the hero GLB — that created a giant glitchy shadow.
+    // The clone inherits the GLB's ~108x root scale, so a fixed ±1.1 LOCAL box
+    // became ±119 m in world space and cast a giant long shadow. Scale-correct
+    // the box the same way Character.bindMixamo does (child meshes already
+    // carry their own corrected bounds from the source hero).
+    this.bodyGrid.computeWorldMatrix(true);
+    const w = this.bodyGrid.getWorldMatrix().m;
+    const hx = 1.1 / Math.max(1e-6, Math.hypot(w[0], w[1], w[2]));
+    const hy = 2.0 / Math.max(1e-6, Math.hypot(w[4], w[5], w[6]));
+    const hz = 1.1 / Math.max(1e-6, Math.hypot(w[8], w[9], w[10]));
     this.bodyGrid.setBoundingInfo(new BABYLON.BoundingInfo(
-      new BABYLON.Vector3(-1.1, 0, -1.1), new BABYLON.Vector3(1.1, 2.0, 1.1)));
-    this.bodyGrid.getChildMeshes(false).forEach((m) => {
-      (m as BABYLON.Mesh).setBoundingInfo(new BABYLON.BoundingInfo(
-        new BABYLON.Vector3(-1.1, 0, -1.1), new BABYLON.Vector3(1.1, 2.0, 1.1)));
-    });
+      new BABYLON.Vector3(-hx, 0, -hz), new BABYLON.Vector3(hx, hy, hz)));
     // Remove from shadow casting (the main hero still casts the real shadow).
     this.removeShadowCaster?.(this.bodyGrid);
     this.bodyGrid.getChildMeshes(false).forEach((m) => this.removeShadowCaster?.(m));

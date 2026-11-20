@@ -31,12 +31,33 @@ export class CameraRig {
     this.camera.upperBetaLimit = 1.42;
     this.camera.wheelPrecision = 40;
     this.camera.attachControl(canvas, true);
-    // Our input layer owns orbit — remove ALL competing Babylon inputs so
-    // pointer drag doesn't fight manual alpha/beta writes (camera stickiness).
+    // Our own layer drives ALL orbit input (gamepad right stick + mouse drag).
+    // Remove Babylon's competing inputs so nothing fights our alpha/beta writes.
     this.camera.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
     this.camera.inputs.removeByType('ArcRotateCameraGamepadInput');
-    this.camera.inputs.removeByType('ArcRotateCameraPointersInput');
     this.camera.inputs.removeByType('ArcRotateCameraMouseWheelInput');
+    this.camera.inputs.removeByType('ArcRotateCameraPointersInput');
+
+    // LEFT-MOUSE DRAG → orbit the camera. Handled explicitly instead of via
+    // Babylon's pointer input so it can never fight setTarget/copyFrom writes.
+    let dragging = false;
+    let lastX = 0, lastY = 0;
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return; // left button only
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { void err; }
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      this.addOrbit(-dx * 0.006, -dy * 0.006);
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (e.button !== 0) return;
+      dragging = false;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (err) { void err; }
+    });
   }
 
   public getCamera() { return this.camera; }
@@ -67,6 +88,8 @@ export class CameraRig {
       this.focus.y += (Math.random() - 0.5) * f;
     }
     this.camera.radius += (this.distance - this.camera.radius) * k;
-    this.camera.setTarget(this.focus);
+    // Set the target directly (not setTarget) — setTarget recomputes alpha/beta
+    // from position every frame, which fights orbit writes → sticky camera.
+    this.camera.target.copyFrom(this.focus);
   }
 }

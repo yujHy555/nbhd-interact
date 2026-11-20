@@ -265,11 +265,26 @@ export class Character {
       for (const m of meshes) m.computeWorldMatrix(true);
       // The GLB's stale bind-pose bounds are ~72 m wide (cm-scale leftovers),
       // which makes the hero cast a giant shadow and never get culled. Clamp
-      // to a correct character-sized box each mesh so shadows/frustum are sane.
+      // to a character-sized box. IMPORTANT: bounds are LOCAL, while the GLB
+      // root is scaled ~108x to bring the cm model to 1.8 m. Dividing by each
+      // mesh's accumulated world scale keeps the WORLD box ~1.1 x 2 m — a
+      // fixed ±1.1 local box became ±119 m and cast a huge long shadow.
       for (const m of meshes) {
+        m.computeWorldMatrix(true);
+        // Use the world-matrix BASIS LENGTHS, not Matrix.decompose(): the
+        // Mixamo armature scale is 1e-4 combined with a 108x root scale, which
+        // makes decompose() return garbage (a zero axis) on this near-singular
+        // matrix. Basis lengths are reliable and give ~0.0108 for this hero.
+        const w = m.getWorldMatrix().m;
+        const sx = Math.hypot(w[0], w[1], w[2]);
+        const sy = Math.hypot(w[4], w[5], w[6]);
+        const sz = Math.hypot(w[8], w[9], w[10]);
+        const hx = 1.1 / Math.max(1e-6, sx);
+        const hy = 2.0 / Math.max(1e-6, sy);
+        const hz = 1.1 / Math.max(1e-6, sz);
         m.setBoundingInfo(new BABYLON.BoundingInfo(
-          new BABYLON.Vector3(-1.1, 0, -1.1),
-          new BABYLON.Vector3(1.1, 2.0, 1.1),
+          new BABYLON.Vector3(-hx, 0, -hz),
+          new BABYLON.Vector3(hx, hy, hz),
         ));
       }
       // Calibrate ankle → sole distance for the slope foot-contact check.

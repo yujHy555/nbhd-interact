@@ -125,7 +125,10 @@ class App {
         const hero = this.mixamo.root.getChildMeshes(false).find((m) => m instanceof BABYLON.Mesh) as BABYLON.Mesh | undefined;
         if (hero && this.drone) this.drone.bindTarget(hero);
         for (const m of this.mixamo.root.getChildMeshes(false)) {
-          if (m instanceof BABYLON.Mesh) {
+          // The GLB root node has no geometry of its own; its oversized stale
+          // bounds (and the drone's clone of it) cast a giant long shadow.
+          // The real body-part meshes below cast the correct hero shadow.
+          if (m instanceof BABYLON.Mesh && m.name !== '__root__' && !/^droneBodyGrid/.test(m.name)) {
             this.env.registerShadowCaster(m);
             // Matte hero — no glossy/specular look.
             const mat = m.material as BABYLON.PBRMaterial;
@@ -152,15 +155,19 @@ class App {
     }).then(() => {
       for (const m of this.scene.meshes) {
         if (m.name.indexOf('sciFiBuilding') === 0) {
-          // Background scenery: receive shadows but DON'T cast long shadows
-          // across the whole level (that created the strange giant shadow).
           m.receiveShadows = true;
+          this.env.registerShadowCaster(m);
         }
       }
     });
 
     this.input = new Input();
     this.camera = new CameraRig(this.scene, this.canvas);
+    // Parent the sky to the camera: the most robust way to keep the dome
+    // centred on the view at every position/angle (no infiniteDistance quirks).
+    this.env.sky.parent = this.camera.getCamera();
+    this.env.sky.position.set(0, 0, 0);
+    this.env.sky.infiniteDistance = false;
     this.polish = new Polish(this.scene, this.camera.getCamera());
     const arc = this.camera.getCamera() as BABYLON.ArcRotateCamera;
     arc.lowerBetaLimit = 0.25;
@@ -634,9 +641,6 @@ class App {
       }
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
-    // Keep the sky sphere centred on the camera every frame — infiniteDistance
-    // alone left it behind at far ends of the expanded map (sky disappeared).
-    this.env.sky.position.copyFrom(this.camera.getCamera().position);
     this.pixelPortal.update(dt, pp);
     this.env.focusSun(pp);
     this.drone.update(dt, pp);
