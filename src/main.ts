@@ -246,7 +246,9 @@ class App {
       // 0.14 m-thin rails cast 24 m hairline shadows that read as a "long
       // strange shadow" and pop as the 40 m shadow cell snaps. The decks and
       // ramps themselves still cast their proper rectangular shadows.
-      n === 'travelatorRail' || n === 'rampRail' || n === 'rampBolt' ||
+      // The travelator deck is only 0.22 m tall and sits on the ground — its
+      // "shadow" is a 24 m hairline that reads as a long strange line.
+      n === 'travelator' || n === 'travelatorRail' || n === 'rampRail' || n === 'rampBolt' ||
       // 360 tiny collectible sub-meshes — their shadows cost draw calls and
       // add nothing visible. The collectibles themselves stay fully rendered.
       /^pickup/.test(n) ||
