@@ -1,5 +1,27 @@
 import * as BABYLON from 'babylonjs';
 
+// Equirectangular sky shader — samples the HDRI panorama with true spherical
+// UVs. StandardMaterial's emissiveTexture path rendered this sky as flat grey.
+BABYLON.Effect.ShadersStore['nbhdSkyVertexShader'] = `
+precision highp float;
+attribute vec3 position;
+uniform mat4 worldViewProjection;
+varying vec2 vUV;
+void main(void) {
+  vec3 n = normalize(position);
+  vUV = vec2(atan(n.z, n.x) / 6.2831853 + 0.5, acos(n.y) / 3.1415927);
+  gl_Position = worldViewProjection * vec4(position, 1.0);
+}`;
+BABYLON.Effect.ShadersStore['nbhdSkyFragmentShader'] = `
+precision highp float;
+varying vec2 vUV;
+uniform sampler2D skyTexture;
+uniform float level;
+void main(void) {
+  vec3 c = texture2D(skyTexture, vUV).rgb * level;
+  gl_FragColor = vec4(c, 1.0);
+}`;
+
 /**
  * State-of-the-art prototype environment:
  *  - Procedural equirectangular HDRI-style environment (IBL + reflections)
@@ -35,17 +57,18 @@ export class Environment {
     // Visible background: the full 4096×2048 blue-desert panorama mapped
     // directly onto a sphere, independent of the HDR lighting IBL.
     const skyTex = new BABYLON.Texture('/hdri/blue_desert/textures/Scene_-_Root_diffuse.jpeg', scene);
-    skyTex.level = 0.85; // reduce sky brightness so bloom doesn't blow it out
+    skyTex.level = 0.95;
     skyTex.anisotropicFilteringLevel = 8;
     const sky = BABYLON.MeshBuilder.CreateSphere('skyBox', { diameter: 4000, segments: 48 }, scene);
-    sky.rotation.x = Math.PI;
-    const skyMat = new BABYLON.StandardMaterial('skyMat', scene);
+    // Custom shader samples the equirectangular HDRI panorama with true
+    // spherical UVs — the visible background is the real sky, not flat grey.
+    const skyMat = new BABYLON.ShaderMaterial('skyMat', scene,
+      { vertex: 'nbhdSky', fragment: 'nbhdSky' },
+      { attributes: ['position'], uniforms: ['worldViewProjection', 'level'], samplers: ['skyTexture'] });
+    skyMat.setTexture('skyTexture', skyTex);
+    skyMat.setFloat('level', 0.95);
     skyMat.backFaceCulling = false;
-    skyMat.disableLighting = true;
-    skyMat.emissiveTexture = skyTex;
-    skyMat.emissiveColor = BABYLON.Color3.White();
-    skyMat.diffuseColor = BABYLON.Color3.Black();
-    skyMat.specularColor = BABYLON.Color3.Black();
+    skyMat.disableDepthWrite = true;
     sky.material = skyMat;
     sky.isPickable = false;
     sky.applyFog = false;
@@ -187,19 +210,6 @@ export class Environment {
       const tex = new BABYLON.Texture(url, this.scene);
       return tex;
     }
-  }
-
-  private createSkyTexture(): BABYLON.Texture {
-    const cv = document.createElement('canvas');
-    cv.width = 16; cv.height = 512;
-    const ctx = cv.getContext('2d')!;
-    const g = ctx.createLinearGradient(0, 0, 0, 512);
-    g.addColorStop(0, '#1b3a63');
-    g.addColorStop(0.48, '#b9cfdd');
-    g.addColorStop(0.52, '#8a8070');
-    g.addColorStop(1, '#24262a');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, 16, 512);
-    return new BABYLON.Texture(cv.toDataURL('image/png'), this.scene);
   }
 
   /** Reflection / material test balls at the welcome zone. */

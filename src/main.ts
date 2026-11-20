@@ -28,6 +28,7 @@ class App {
   private camera!: CameraRig;
   private character!: Character;
   private mixamo!: MixamoController;
+  private assetLoads: Promise<any>[] = [];
   private polish!: Polish;
   private audio!: GameAudio;
   private materials!: Materials;
@@ -118,7 +119,7 @@ class App {
     // Face screen-right from the very first frame (idle at start)
     this.character.headingPivot.rotation.y = Math.PI / 2;
     this.mixamo = new MixamoController(this.scene);
-    this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
+    const heroLoad = this.mixamo.load('/models/', 'BlobothanChar.glb').then((ok) => {
       if (ok) {
         this.character.bindMixamo(this.mixamo);
         // Bind the newly-loaded hero to the drone scan overlay (if present).
@@ -145,21 +146,25 @@ class App {
         this.character.unbindMixamo();
       }
     });
+    this.assetLoads.push(heroLoad);
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.enableShadowReceivers();
     this.loadRoad();
     // Background sci-fi city with landable colliders.
     const city = new SciFiCity(this.scene);
-    city.load((c) => {
+    const cityLoad = city.load((c) => {
       this.world.colliders.push(c);
     }).then(() => {
       for (const m of this.scene.meshes) {
         if (m.name.indexOf('sciFiBuilding') === 0) {
           m.receiveShadows = true;
-          this.env.registerShadowCaster(m);
+          // Only the visible building instances cast; the disabled source
+          // meshes at the origin must not throw shadows over the start area.
+          if (m.name.indexOf('sciFiBuilding_part') === 0) this.env.registerShadowCaster(m);
         }
       }
     });
+    this.assetLoads.push(cityLoad);
 
     this.input = new Input();
     this.camera = new CameraRig(this.scene, this.canvas);
@@ -199,9 +204,20 @@ class App {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
 
-    this.ui.setLoading(85);
-    await new Promise((r) => setTimeout(r, 400));
+    // Wait for every GLB and shader to be ready BEFORE revealing the scene.
+    // Previously the loading screen hid after a fixed 400 ms while models were
+    // still streaming in — the level "staggered" into view and the first
+    // camera move hitched while shaders compiled.
+    this.ui.setLoading(88);
+    await Promise.all(this.assetLoads);
+    this.ui.setLoading(94);
+    await this.scene.whenReadyAsync();
+    // Compile the post-process + shadow shaders off-screen so the first
+    // rotation and every frame after are smooth (no compile hitches).
+    this.scene.render();
+    this.scene.render();
     this.ui.setLoading(100);
+    await new Promise((r) => setTimeout(r, 120));
     this.ui.hideLoading();
     (window as any).__nbhd = this;
     // Dev-only tools — stripped entirely from production builds by Vite.
@@ -214,15 +230,12 @@ class App {
   }
 
   private enableShadowReceivers() {
-    // Every real surface receives sun shadows; structural meshes also cast.
+    // Every real surface receives sun shadows. Only the hero and the sci-fi
+    // buildings CAST — the flat ground-level platforms/rails produced huge
+    // blocky rectangular shadows that read as a "long strange shadow".
     for (const m of this.scene.meshes) {
       if (m.name === 'skyBox') continue;
       m.receiveShadows = true;
-      if (m.name === 'platform' || m.name === 'ramp' || m.name === 'rampRail' ||
-          m.name === 'rampPanel' || m.name === 'rampBolt' || m.name === 'protoCube' ||
-          m.name === 'travelator' || m.name === 'travelatorRoller' || m.name === 'travelatorRail') {
-        this.env.registerShadowCaster(m as BABYLON.Mesh);
-      }
     }
   }
 
@@ -622,7 +635,8 @@ class App {
   private frame() {
     const dt = Math.min(this.engine.getDeltaTime() / 1000, 0.05);
     if (Math.abs(this.input.state.cameraX) > 0.05 || Math.abs(this.input.state.cameraZ) > 0.05) {
-      this.camera.addOrbit(-this.input.state.cameraX * dt * 1.6, -this.input.state.cameraZ * dt * 1.2);
+      // Right stick → camera ONLY (never ax/az). Snappy rate for responsive turn.
+      this.camera.addOrbit(-this.input.state.cameraX * dt * 3.2, -this.input.state.cameraZ * dt * 2.4);
     }
     if (this.mode === 'welcome') {
       this.input.update(dt);

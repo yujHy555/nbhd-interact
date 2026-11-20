@@ -36,6 +36,7 @@ varying vec3 vPosW;
 uniform float time;
 uniform float strength;
 uniform vec3 beamColor;
+uniform vec3 cameraPosition;
 uniform vec3 playerPos;
 uniform float scanSpeed;
 
@@ -120,6 +121,7 @@ varying vec3 vNormalW;
 uniform float time;
 uniform float strength;
 uniform vec3 beamColor;
+uniform vec3 cameraPosition;
 float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 void main(void) {
   vec3 N = normalize(vNormalW);
@@ -419,7 +421,12 @@ export class Drone {
     }
     this.scanMat.setFloat('time', this.time);
     this.scanMat.setVector3('playerPos', player);
-    if (this.bodyGridMat) this.bodyGridMat.setFloat('time', this.time);
+    const camPos = this.scene.activeCamera ? this.scene.activeCamera.position : BABYLON.Vector3.Zero();
+    this.scanMat.setVector3('cameraPosition', camPos);
+    if (this.bodyGridMat) {
+      this.bodyGridMat.setFloat('time', this.time);
+      this.bodyGridMat.setVector3('cameraPosition', camPos);
+    }
 
     const ease = (t: number) => t * t * (3 - 2 * t);
 

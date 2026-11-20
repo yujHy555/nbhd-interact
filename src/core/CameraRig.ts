@@ -30,6 +30,10 @@ export class CameraRig {
     this.camera.lowerBetaLimit = 0.25;
     this.camera.upperBetaLimit = 1.42;
     this.camera.wheelPrecision = 40;
+    // No inertial damping — orbit must respond instantly to input.
+    this.camera.inertia = 0;
+    this.camera.angularSensibilityX = 500;
+    this.camera.angularSensibilityY = 500;
     this.camera.attachControl(canvas, true);
     // Our own layer drives ALL orbit input (gamepad right stick + mouse drag).
     // Remove Babylon's competing inputs so nothing fights our alpha/beta writes.
@@ -51,13 +55,16 @@ export class CameraRig {
       if (!dragging) return;
       const dx = e.clientX - lastX, dy = e.clientY - lastY;
       lastX = e.clientX; lastY = e.clientY;
-      this.addOrbit(-dx * 0.006, -dy * 0.006);
+      this.addOrbit(-dx * 0.013, -dy * 0.013);
     });
-    window.addEventListener('pointerup', (e) => {
-      if (e.button !== 0) return;
+    const endDrag = (e?: PointerEvent) => {
       dragging = false;
-      try { canvas.releasePointerCapture(e.pointerId); } catch (err) { void err; }
-    });
+      if (e) { try { canvas.releasePointerCapture(e.pointerId); } catch (err) { void err; } }
+    };
+    window.addEventListener('pointerup', (e) => { if (e.button === 0) endDrag(e); });
+    window.addEventListener('pointercancel', endDrag);
+    window.addEventListener('blur', () => endDrag());
+    canvas.addEventListener('lostpointercapture', () => endDrag());
   }
 
   public getCamera() { return this.camera; }
@@ -76,7 +83,8 @@ export class CameraRig {
   }
 
   public update(dt: number, target: BABYLON.Vector3, lookAhead = 0) {
-    const k = Math.min(1, dt * 4.5);
+    // Snappy follow — the camera must not feel heavy when turning.
+    const k = Math.min(1, dt * 11);
     this.focus.x += (target.x + lookAhead - this.focus.x) * k;
     this.focus.y += (target.y + 0.9 - this.focus.y) * k;
     this.focus.z += (target.z - this.focus.z) * k;

@@ -26,12 +26,13 @@ export class Polish {
     this.pipeline = new BABYLON.DefaultRenderingPipeline('aaaPipeline', true, scene, [camera as BABYLON.Camera]);
     this.pipeline.fxaaEnabled = true;
     this.pipeline.samples = 4;
-    this.pipeline.bloomEnabled = true;
-    this.pipeline.bloomThreshold = 0.9;
-    this.pipeline.bloomWeight = 0.18;
-    this.pipeline.bloomKernel = 32;
-    this.pipeline.bloomScale = 0.4;
+    // Bloom OFF — it blew the sky/background out to flat white.
+    this.pipeline.bloomEnabled = false;
     this.pipeline.imageProcessingEnabled = true;
+    // Neutral exposure/contrast so the sky keeps its real colours (the old
+    // contrast 1.28 crushed the sky to flat white).
+    this.pipeline.imageProcessing.exposure = 0.95;
+    this.pipeline.imageProcessing.contrast = 1.0;
     // Gentle vignette — a heavy one darkened the whole sky into "disappearing".
     this.pipeline.imageProcessing.vignetteEnabled = true;
     this.pipeline.imageProcessing.vignetteWeight = 0.55;
