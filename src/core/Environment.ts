@@ -109,7 +109,7 @@ export class Environment {
     this.hemi.groundColor = new BABYLON.Color3(0.18, 0.16, 0.14);
 
     // ---- Ground (real-world metric scale) ----
-    this.ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 2480, height: 200 }, scene);
+    this.ground = BABYLON.MeshBuilder.CreateGround('ground', { width: 440, height: 200 }, scene);
     const groundMat = new BABYLON.PBRMaterial('groundMat', scene);
     groundMat.albedoColor = new BABYLON.Color3(0.56, 0.58, 0.62); // lighter grey
     groundMat.metallic = 0.05;
@@ -128,14 +128,14 @@ export class Environment {
     gridTex.update();
     gridTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
     gridTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-    gridTex.uScale = 2480; // 2480 m wide → one-metre tiles across X
-    gridTex.vScale = 200;  // 200 m deep → one-metre tiles across Z
+    gridTex.uScale = 440; // level now ends at the portal (~x=200)
+    gridTex.vScale = 200;
     groundMat.albedoTexture = gridTex;
     groundMat.albedoColor = new BABYLON.Color3(1, 1, 1);
 
     this.ground.material = groundMat;
     this.ground.receiveShadows = true;
-    this.ground.position.x = 1160; // centre of the expanded world (0..2320)
+    this.ground.position.x = 100; // covers the level from x=-120 to x=320
 
     // Start area kept clean — no calibration chart or material test balls.
   }

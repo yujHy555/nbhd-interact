@@ -247,12 +247,20 @@ class App {
       // strange shadow" and pop as the 40 m shadow cell snaps. The decks and
       // ramps themselves still cast their proper rectangular shadows.
       n === 'travelatorRail' || n === 'rampRail' || n === 'rampBolt' ||
+      // 360 tiny collectible sub-meshes — their shadows cost draw calls and
+      // add nothing visible. The collectibles themselves stay fully rendered.
+      /^pickup/.test(n) ||
       /^drone(BodyGrid|ScanCone|ScanRing|Halo|Lens|LED|CPULED|Core|Rotor|RotorRing)/.test(n);
     for (const m of this.scene.meshes) {
       if (m.name === 'skyBox') continue;
       m.receiveShadows = true;
       if (!(m instanceof BABYLON.Mesh) || !m.isEnabled() || skip(m.name)) continue;
       this.env.registerShadowCaster(m);
+      // Static level geometry never moves — freeze its world matrix so the
+      // engine skips per-frame transform recomputation (reactive gameplay).
+      if (/^(platform|travelator|ramp|road|ground|sciFiBuilding|portal)/.test(m.name)) {
+        m.freezeWorldMatrix();
+      }
     }
   }
 
@@ -609,8 +617,9 @@ class App {
       p.x = cx; p.z = cz;
     }
     if (p.y < -8) { p.set(2.4, 0, 0); v.set(0, 0, 0); }
-    // No artificial X/Z bounds — the player roams the whole level freely and
-    // the camera follows.
+    // The playable level ends just past the pixel portal (x=192). Clamp X so
+    // the player never walks off into the empty void beyond it.
+    if (p.x > 214) { p.x = 214; if (v.x > 0) v.x = 0; }
 
     this.character.setFlip(0);
     if (landed) { this.audio.land(6); this.character.landingImpact(-8); this.camera.punch(3); }

@@ -19,20 +19,7 @@ export class World {
     { x: 0, name: 'WELCOME' },
     { x: 78, name: 'WHAT WE DO' },
     { x: 156, name: 'CONTACT' },
-    { x: 250, name: 'INNOVATION' },
-    { x: 360, name: 'DISCOVERY' },
-    { x: 470, name: 'HORIZON' },
-    { x: 580, name: 'FRONTIER' },
-    { x: 700, name: 'SUMMIT' },
-    { x: 820, name: 'BEYOND' },
-    { x: 950, name: 'GALAXY' },
-    { x: 1090, name: 'COSMOS' },
-    { x: 1240, name: 'INFINITY' },
-    { x: 1400, name: 'APEX' },
-    { x: 1580, name: 'OBSIDIAN' },
-    { x: 1780, name: 'NEBULA' },
-    { x: 2000, name: 'ZENITH' },
-    { x: 2240, name: 'ETERNITY' },
+    { x: 192, name: 'PIXEL PORTAL' },
   ];
   private scene: BABYLON.Scene;
   private mats: Materials;
@@ -261,25 +248,8 @@ export class World {
     this.addPlatform(170, 1.6, 0, 6, 1, 5, [0.95, 0.4, 0.75]);
     this.addPlatform(182, 1.0, 0, 8, 1, 5, [0.95, 0.4, 0.75]);
 
-    // ---- Extended world (212..320): bigger map ----
-    this.addPlatform(214, 1.2, 0, 6, 1, 5, [0.4, 0.95, 0.7]);
-    this.addPlatform(226, 2.0, 0, 6, 1, 5, [0.4, 0.95, 0.7]);
-    this.addPlatform(240, 2.8, 0, 7, 1, 5, [0.4, 0.95, 0.7]);
-    this.addPlatform(256, 2.0, 0, 6, 1, 5, [0.6, 0.5, 0.95]);
-    this.addPlatform(270, 1.4, 0, 6, 1, 5, [0.6, 0.5, 0.95]);
-    this.addPlatform(286, 2.2, 0, 7, 1, 5, [0.6, 0.5, 0.95]);
-    this.addPlatform(302, 1.6, 0, 8, 1, 5, [0.95, 0.7, 0.3]);
-
-    // ---- Far world (320..1450): expansive new frontier ----
-    const farColors: [number, number, number][] = [
-      [0.3, 0.9, 0.85], [0.75, 0.45, 0.95], [0.95, 0.62, 0.35], [0.45, 0.8, 0.95],
-    ];
-    for (let x = 320, i = 0; x <= 2280; x += 22, i++) {
-      const h = 1.0 + ((i * 7) % 5) * 0.45;
-      this.addPlatform(x, h - 0.5, 0, 7 + (i % 3), 1, 5, farColors[i % farColors.length]);
-      // occasional higher perch
-      if (i % 4 === 0) this.addPlatform(x + 10, h + 0.8, 0, 5, 1, 4, farColors[(i + 1) % farColors.length]);
-    }
+    // Everything beyond the pixel portal (x=192) is intentionally empty —
+    // the world ends at the portal and new zones will be added deliberately.
 
     // AAA STYLIZED collectibles — cute little cardboard boxes with toon
     // shading, tape strips, flaps and a happy face. Placed high above the
@@ -288,6 +258,7 @@ export class World {
 
     for (let i = 0; i < 60; i++) {
       const x = 12 + i * 38;
+      if (x > 188) break; // nothing past the pixel portal
       const z = 0;
       let base = 0;
       for (let dx = -3; dx <= 3; dx += 1.5) {
@@ -327,17 +298,8 @@ export class World {
     }
 
     // Zone sign posts (skip the start area — keep it clean)
-    for (const z of this.zones) if (z.x > 0) this.addZoneSign(z);
-  }
-
-  private addZoneSign(zone: ZoneMarker) {
-    const post = BABYLON.MeshBuilder.CreateCylinder('zonePost', { diameter: 0.25, height: 7, tessellation: 12 }, this.scene);
-    post.position.set(zone.x, 3.5, -5);
-    post.material = this.mats.concrete('zonePostMat');
-    const panel = BABYLON.MeshBuilder.CreateBox('zonePanel', { width: 4.5, height: 1.4, depth: 0.2 }, this.scene);
-    panel.position.set(zone.x, 6.2, -5);
-    panel.material = this.mats.emissive('zonePanelMat', [0.2, 0.9, 1]);
-    this.signs.push(panel);
+    // Sign boards / poles removed — they were the source of the long hairline
+    // shadows that shifted with the camera. Zone names still appear in the HUD.
   }
 
   /** Highest surface at (x,z) — platforms, ramps, travelators, ground. */
@@ -392,9 +354,6 @@ export class World {
         p.mesh.setEnabled(false);
         this.onPickup?.(p);
       }
-    }
-    for (let i = 0; i < this.signs.length; i++) {
-      this.signs[i].scaling.y = 1 + Math.sin(this.t * 3 + i) * 0.04;
     }
     // Zone detection
     let current = 0;

@@ -131,7 +131,6 @@ export class SciFiCity {
     // they read in the background without crowding the play strip (z≈0).
     const spots: { x: number; z: number; s: number }[] = [
       { x: 70, z: 30, s: 1.5 },
-      { x: 400, z: 36, s: 1.8 },
     ];
 
     // Dense exact heightfield per building: 10x10 cells, top from real ray hits.
