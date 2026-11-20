@@ -140,7 +140,11 @@ export class Environment {
     // Start area kept clean — no calibration chart or material test balls.
   }
 
-  public registerShadowCaster(mesh: BABYLON.AbstractMesh) { this.shadowGen.addShadowCaster(mesh, true); }
+  public registerShadowCaster(mesh: BABYLON.AbstractMesh) {
+    const rl = this.shadowGen.getShadowMap()!.renderList as BABYLON.AbstractMesh[];
+    if (rl.indexOf(mesh) >= 0) return; // never double-register
+    this.shadowGen.addShadowCaster(mesh, true);
+  }
   public unregisterShadowCaster(mesh: BABYLON.AbstractMesh) {
     try { this.shadowGen.removeShadowCaster(mesh, true); } catch (e) { void e; }
     // Also prune directly — clones may be registered under a descendant name.

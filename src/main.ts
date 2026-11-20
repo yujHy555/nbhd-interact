@@ -230,12 +230,20 @@ class App {
   }
 
   private enableShadowReceivers() {
-    // Every real surface receives sun shadows. Only the hero and the sci-fi
-    // buildings CAST — the flat ground-level platforms/rails produced huge
-    // blocky rectangular shadows that read as a "long strange shadow".
+    // Every real scene object both receives and casts sun shadows — platforms,
+    // ramps, travelators, rails, sign boards, pickups, portal frame, etc.
+    // Excluded: the sky dome, disabled GLB source meshes, the GLB root node
+    // (stale giant bounds), and the drone's emissive/glow effect meshes (their
+    // additive shaders would throw broken shadows).
+    const skip = (n: string) =>
+      n === 'skyBox' || n === 'ground' || n === '__root__' || n === 'sciFiBuildingSrc' ||
+      n === 'portalVeil' ||
+      /^drone(BodyGrid|ScanCone|ScanRing|Halo|Lens|LED|CPULED|Core|Rotor|RotorRing)/.test(n);
     for (const m of this.scene.meshes) {
       if (m.name === 'skyBox') continue;
       m.receiveShadows = true;
+      if (!(m instanceof BABYLON.Mesh) || !m.isEnabled() || skip(m.name)) continue;
+      this.env.registerShadowCaster(m);
     }
   }
 
