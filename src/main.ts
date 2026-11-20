@@ -243,6 +243,10 @@ class App {
     const skip = (n: string) =>
       n === 'skyBox' || n === 'ground' || n === '__root__' || n === 'sciFiBuildingSrc' ||
       n === 'portalVeil' || n === 'zonePost' ||
+      // 0.14 m-thin rails cast 24 m hairline shadows that read as a "long
+      // strange shadow" and pop as the 40 m shadow cell snaps. The decks and
+      // ramps themselves still cast their proper rectangular shadows.
+      n === 'travelatorRail' || n === 'rampRail' || n === 'rampBolt' ||
       /^drone(BodyGrid|ScanCone|ScanRing|Halo|Lens|LED|CPULED|Core|Rotor|RotorRing)/.test(n);
     for (const m of this.scene.meshes) {
       if (m.name === 'skyBox') continue;
