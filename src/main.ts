@@ -248,7 +248,10 @@ class App {
       // ramps themselves still cast their proper rectangular shadows.
       // The travelator deck is only 0.22 m tall and sits on the ground — its
       // "shadow" is a 24 m hairline that reads as a long strange line.
-      n === 'travelator' || n === 'travelatorRail' || n === 'rampRail' || n === 'rampBolt' ||
+      // Rollers are 5 m cylinders lying flat at the belt ends — they cast a
+      // thin line straight down the view direction (the "long shadow").
+      n === 'travelator' || n === 'travelatorRoller' || n === 'travelatorRail' ||
+      n === 'rampRail' || n === 'rampBolt' ||
       // 360 tiny collectible sub-meshes — their shadows cost draw calls and
       // add nothing visible. The collectibles themselves stay fully rendered.
       /^pickup/.test(n) ||
