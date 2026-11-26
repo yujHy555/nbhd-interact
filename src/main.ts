@@ -39,6 +39,7 @@ class App {
   private drone!: Drone;
   private footprints!: Footprints;
   private footSide = 1;
+
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
   private droneTriggered = false;

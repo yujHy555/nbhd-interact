@@ -20,6 +20,7 @@ export class MixamoController implements MixamoBinding {
   private current: BABYLON.AnimationGroup | null = null;
   private fadeObs: BABYLON.Observer<BABYLON.Scene> | null = null;
   private loaded = false;
+  private slideRange: { from: number; to: number } | null = null;
 
   constructor(scene: BABYLON.Scene) {
     this.scene = scene;
@@ -168,9 +169,14 @@ export class MixamoController implements MixamoBinding {
       if (g !== old && g !== group) { g.stop(); g.weight = 0; }
     }
     group.speedRatio = 1;
+    // The baseball "Slide" clip: skip the run-up frames (which fling the legs
+    // up like a kick) and play just the low sliding portion on a loop.
+    this.slideRange = name.toLowerCase() === 'slide' ? { from: 12, to: 34 } : null;
 
+    const sf = this.slideRange?.from ?? 0;
+    const st = this.slideRange?.to ?? Number.MAX_SAFE_INTEGER;
     if (!old) {
-      group.start(loop);
+      group.start(loop, 1, sf, st);
       group.weight = 1;
       this.current = group;
       return true;
@@ -178,7 +184,7 @@ export class MixamoController implements MixamoBinding {
 
     const from = old.weight ?? 1;
     old.weight = from;
-    group.start(loop);
+    group.start(loop, 1, sf, st);
     group.weight = 0;
     let t = 0;
     const FADE = 0.16; // seconds — snappy, AAA feel
