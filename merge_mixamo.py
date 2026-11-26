@@ -45,6 +45,26 @@ for idx, (fname, clip) in enumerate(FILES):
             print(f"WARN: no action in {fname}")
             continue
         src_action.name = clip  # e.g. Walking
+        # Bake out root motion: Mixamo clips translate the hips bone, which
+        # would slide the visible mesh inside the skeleton then snap back when
+        # the clip ends. Keep rotation, zero the location keys so clips play
+        # in place — the kinematic controller owns all world-space movement.
+        # Blender 4.4+/5.x uses layered actions; fall back to legacy fcurves.
+        all_fcurves = []
+        if hasattr(src_action, 'fcurves'):
+            all_fcurves = list(src_action.fcurves)
+        else:
+            for layer in getattr(src_action, 'layers', []):
+                for strip in layer.strips:
+                    for bag in getattr(strip, 'channelbags', []):
+                        all_fcurves.extend(list(bag.fcurves))
+        for fc in all_fcurves:
+            if 'Hips' in fc.data_path and fc.array_index < 3 and fc.keyframe_points:
+                base = fc.keyframe_points[0].co.y
+                for kp in fc.keyframe_points:
+                    kp.co.y = base
+                    kp.handle_left.y = base
+                    kp.handle_right.y = base
         # Attach action to base armature as an NLA track so the glTF exporter
         # exports each as a separate AnimationGroup.
         if base_arm.animation_data is None:

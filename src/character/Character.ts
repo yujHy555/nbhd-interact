@@ -338,8 +338,8 @@ export class Character {
     if (this.mixamo) {
       const clip = s === 'run' ? 'run' : s === 'walk' ? 'walk' : s === 'strafe' ? 'walk'
         : s === 'jump' || s === 'doubleJump' || s === 'flip' ? 'jump'
-        : s === 'crouch' ? 'crouch' : s === 'crouchwalk' ? 'crouchwalk'
-        : s === 'slide' ? 'slide' : s === 'land' ? 'land' : s === 'fall' ? 'fall' : 'idle';
+        : s === 'crouch' ? 'crouch' : s === 'crouchwalk' || s === 'slide' ? 'crouchwalk'
+        : s === 'land' ? 'land' : s === 'fall' ? 'fall' : 'idle';
       this.playMocap(clip);
     }
   }
@@ -364,6 +364,7 @@ export class Character {
       let nominal = 1;
       if (this.state === 'run') nominal = 4.2;
       else if (this.state === 'walk' || this.state === 'strafe') nominal = 2.0;
+      else if (this.state === 'slide') nominal = 2.6; // low, fast ground slide
       const ratio = nominal > 1 ? Math.min(2.2, Math.max(0.4, speed / nominal)) : 1;
       this.mixamo.setCurrentSpeed(this.dir === 'back' ? -ratio : ratio);
       this.updateSecondaryOnly(dt);
