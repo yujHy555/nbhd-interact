@@ -94,7 +94,11 @@ export class Character {
     this.flipPivot.position.y = 0.96; // waist / centre of mass
     // Run IK AFTER the Mixamo animation is evaluated so it can't be overwritten.
     scene.onAfterAnimationsObservable.add(() => {
-      if (this.mixamo) this.applyFootIK(this.scene.getEngine().getDeltaTime() / 1000);
+      if (!this.mixamo) return;
+      // Cancel clip root motion BEFORE foot IK so the shoes are sampled at
+      // the pose the player will actually see (body pinned to the collider).
+      this.cancelRootMotion();
+      this.applyFootIK(this.scene.getEngine().getDeltaTime() / 1000);
     });
     this.buildMaterials();
     this.buildRig();
@@ -296,6 +300,16 @@ export class Character {
           if (b) ankle = Math.min(ankle, BABYLON.Vector3.TransformCoordinates(b.getAbsolutePosition(), skinned.getWorldMatrix()).y);
         }
         if (isFinite(ankle)) this.footOffset = Math.max(0.02, ankle - this.root.getAbsolutePosition().y);
+        // Rest-pose hips offset — the target the runtime root-motion cancel
+        // keeps the body pinned to (load() stopped all clips, so this is rest).
+        const hips = skinned.skeleton.bones.find((b) => /Hips/i.test(b.name));
+        if (hips) {
+          skinned.computeWorldMatrix(true);
+          skinned.skeleton.computeAbsoluteMatrices();
+          const wp = BABYLON.Vector3.TransformCoordinates(hips.getAbsolutePosition(), skinned.getWorldMatrix());
+          const rp = this.root.getAbsolutePosition();
+          this.rootMotionRef = { x: wp.x - rp.x, z: wp.z - rp.z };
+        }
       }
     }
     // Hide procedural mesh while the mocap character is bound
@@ -498,6 +512,49 @@ export class Character {
    *  (not a per-frame snap), so it cannot fight the root and cause bob. The
    *  controller owns the root; IK only supplements it on real slopes. */
   private footLift = 0;
+
+  /** World-space hips offset from the collider in the bind pose. Mixamo
+   *  locomotion clips carry root motion — most notably the running-slide,
+   *  whose hips drift ~1 m forward through the dive and return on recovery.
+   *  Without cancellation the visible body ends the slide ahead of its
+   *  collider, then snaps back when the clip crossfades to running. We cancel
+   *  the drift at runtime with a smoothed feedback correction; the GLB and
+   *  every animation in it stay completely untouched. */
+  private rootMotionRef: { x: number; z: number } | null = null;
+
+  private cancelRootMotion() {
+    if (!this.mixamo || !this.rootMotionRef) return;
+    const gr = this.mixamo.root;
+    const mesh = gr.getChildMeshes(false)
+      .find((m) => (m as BABYLON.Mesh).skeleton) as BABYLON.Mesh | undefined;
+    if (!mesh || !mesh.skeleton) return;
+    const hips = mesh.skeleton.bones.find((b) => /Hips/i.test(b.name));
+    if (!hips) return;
+
+    // Temporarily drop last frame's compensation so we measure the RAW drift
+    // coming from the animation alone — no feedback lag, no overshoot when a
+    // crossfade rapidly changes the root motion.
+    const savedX = gr.position.x, savedZ = gr.position.z;
+    gr.position.x = 0; gr.position.z = 0;
+    gr.computeWorldMatrix(true);
+    mesh.computeWorldMatrix(true);
+    mesh.skeleton.computeAbsoluteMatrices();
+    const wp = BABYLON.Vector3.TransformCoordinates(hips.getAbsolutePosition(), mesh.getWorldMatrix());
+    const rp = this.root.getAbsolutePosition();
+    const ex = (wp.x - rp.x) - this.rootMotionRef.x;
+    const ez = (wp.z - rp.z) - this.rootMotionRef.z;
+    gr.position.x = savedX; gr.position.z = savedZ;
+
+    // Project the world drift onto the character's local axes (the heading
+    // pivot carries only yaw), then offset the glTF root by the exact inverse.
+    // mixamo.root.position is in the heading frame and is not scaled by the
+    // root's own scaling, so world offset == local offset in magnitude.
+    const yaw = this.headingPivot.rotation.y;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    gr.position.z = -(ex * fx + ez * fz);
+    gr.position.x = -(ex * rx + ez * rz);
+  }
 
   public applyFootIK(dt: number) {
     if (!this.mixamo || !this.groundSampler) return;

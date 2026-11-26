@@ -40,6 +40,7 @@ class App {
   private footprints!: Footprints;
   private footSide = 1;
   private slideTimer = 0;
+  private slideRecover = 0; // brief coast-out after a slide so heading/momentum stay continuous
 
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
@@ -483,6 +484,8 @@ class App {
     this.createDrone(); // fresh one-shot encounter for this playthrough
     this.ppos.set(2.4, 0, 0);
     this.pvel.set(0, 0, 0);
+    this.slideTimer = 0;
+    this.slideRecover = 0;
     this.grounded = true;
     this.facing = Math.PI / 2;
     this.character.headingPivot.rotation.y = Math.PI / 2;
@@ -496,6 +499,8 @@ class App {
     this.droneTriggered = false;
     this.ppos.set(0, 0, 0);
     this.pvel.set(0, 0, 0);
+    this.slideTimer = 0;
+    this.slideRecover = 0;
     this.character.setPosition(0, 0, 0);
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
     this.ui.setZone('WELCOME');
@@ -589,7 +594,14 @@ class App {
     // Slide is a LATCHED one-shot: a single RT press while running commits to
     // the full animation (~1 s). Holding the button does nothing extra.
     if (s.slidePressed && this.grounded && Math.hypot(v.x, v.z) > 4) this.slideTimer = 1.55;
-    if (this.slideTimer > 0) this.slideTimer = Math.max(0, this.slideTimer - dt);
+    if (this.slideTimer > 0) {
+      this.slideTimer = Math.max(0, this.slideTimer - dt);
+      // When the clip ends, coast briefly on the slide's momentum. Without
+      // this, fresh input/camera direction instantly steers the player away
+      // from the slide exit — reading as an arc turn and an unwanted shove.
+      if (this.slideTimer === 0) this.slideRecover = 0.18;
+    }
+    if (this.slideRecover > 0) this.slideRecover = Math.max(0, this.slideRecover - dt);
     const sliding = this.slideTimer > 0;
 
     // ---- Travelator: a real conveyor belt ----
@@ -615,8 +627,9 @@ class App {
       tx = v.x;
       tz = v.z;
     }
-    // During a slide, preserve momentum — no braking back toward a walk target.
-    if (sliding) {
+    // During a slide (and the short coast-out after it), preserve momentum —
+    // no braking, no steering back toward a possibly stale input direction.
+    if (sliding || this.slideRecover > 0) {
       tx = v.x; tz = v.z;
     }
     v.x += Math.max(-step, Math.min(step, tx - v.x));
@@ -718,9 +731,12 @@ class App {
     // The Mixamo rig faces +Z at rotation 0 (verified visually: at yaw 0 the
     // camera at -Z sees her BACK). atan2(dx,dz) therefore points her exactly
     // along the desired camera-relative travel direction.
-    // Lock facing during a slide — the slide animation has hip/root rotation
-    // that would otherwise feed back and spin the player in a wide circle.
-    if (moveInput && !sliding) this.facing = Math.atan2(dx, dz);
+    // Face the direction of ACTUAL travel, not raw input. During a slide the
+    // velocity is preserved, so heading stays locked to the slide exit and
+    // run/walk resume from exactly where the slide ended — no arc rotation
+    // caused by a stale camera-relative input direction.
+    const speedNow = Math.hypot(v.x, v.z);
+    if (!sliding && speedNow > 0.5) this.facing = Math.atan2(v.x, v.z);
 
     const crouching = this.input.state.crouch && this.grounded;
     const planSpeed = Math.hypot(v.x, v.z);
