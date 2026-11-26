@@ -510,6 +510,13 @@ export class Character {
    *  controller owns the root; IK only supplements it on real slopes. */
   private footLift = 0;
 
+  // Rate-limited root-motion offset. The animation advances on wall-clock
+  // time, so one slow frame can jump it ahead of the kinematic player — a
+  // rate limit stops that from shoving the whole rig in a single step.
+  private compX = 0;
+  private compZ = 0;
+  private compReady = false;
+
   /** Rest-pose hips offset from the collider (world space). Mixamo clips
    *  translate the hips as root motion; the running-slide drifts ~1 m forward
    *  then returns. We cancel that drift at runtime so the visible body stays
@@ -545,8 +552,22 @@ export class Character {
     const yaw = this.headingPivot.rotation.y;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
-    gr.position.z = -(ex * fx + ez * fz);
-    gr.position.x = -(ex * rx + ez * rz);
+    const targetZ = -(ex * fx + ez * fz);
+    const targetX = -(ex * rx + ez * rz);
+    if (!this.compReady) {
+      this.compX = targetX; this.compZ = targetZ; this.compReady = true;
+    } else {
+      // Normal hand-offs move this by <0.1 m/frame; the cap only bites on a
+      // genuine hitch, so the body can never jump in one frame.
+      const MAX = 0.14;
+      const dz = Math.max(-MAX, Math.min(MAX, targetZ - this.compZ));
+      const dx = Math.max(-MAX, Math.min(MAX, targetX - this.compX));
+      this.compX += dx; this.compZ += dz;
+    }
+    gr.position.z = this.compZ;
+    gr.position.x = this.compX;
+    // Refresh immediately so foot IK and rendering both see the final pose.
+    gr.computeWorldMatrix(true);
   }
 
   public applyFootIK(dt: number) {
@@ -600,7 +621,11 @@ export class Character {
         if (this.footLift > 0) this.root.position.y += this.footLift;
       }
     } else {
-      this.footLift = 0;
+      // Ease the lift away when the slope ends — zeroing it in one frame
+      // drops the whole rig and reads as a teleport on ramp exits.
+      this.footLift += (0 - this.footLift) * Math.min(1, dt * 8);
+      if (this.footLift < 0.001) this.footLift = 0;
+      if (this.footLift > 0) this.root.position.y += this.footLift;
     }
   }
 

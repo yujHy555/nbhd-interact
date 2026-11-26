@@ -42,6 +42,8 @@ class App {
   private slideTimer = 0;
   private slideBuffer = 0; // RT tapped in the air is honoured on touchdown
   private slideExit = 0;   // brief high-accel window for a smooth, reactive exit
+  private arcadeCamClose = false; // proximity-triggered 3rd-person camera near the cabinet
+  private readonly arcadePos = new BABYLON.Vector3(34, 0, 7);
 
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
@@ -452,7 +454,7 @@ class App {
       root.scaling.setAll(1.0);
       // Same side of the road as the house billboard (+Z). The screen still
       // faces the side-scroll camera at negative Z.
-      root.position.set(34, 0, 7);
+      root.position.copyFrom(this.arcadePos);
       root.rotation.y = Math.PI;
       for (const m of res.meshes) {
         if (!m.parent) m.parent = root;
@@ -464,7 +466,7 @@ class App {
       }
       for (const n of res.transformNodes) if (!n.parent) n.parent = root;
       // Solid collision box matching the cabinet footprint (0.9 x 2 x 0.86).
-      this.world.colliders.push({ x: 34, y: 1.0, z: 7, w: 0.85, h: 2.0, d: 0.8 });
+      this.world.colliders.push({ x: this.arcadePos.x, y: 1.0, z: this.arcadePos.z, w: 0.85, h: 2.0, d: 0.8 });
       for (const m of root.getChildMeshes(false)) if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
     } catch (e) {
       console.warn('[Arcade] load failed:', e);
@@ -488,6 +490,8 @@ class App {
     this.slideTimer = 0;
     this.slideBuffer = 0;
     this.slideExit = 0;
+    this.arcadeCamClose = false;
+    this.camera.distance = 16;
     this.grounded = true;
     this.facing = Math.PI / 2;
     this.character.headingPivot.rotation.y = Math.PI / 2;
@@ -504,6 +508,8 @@ class App {
     this.slideTimer = 0;
     this.slideBuffer = 0;
     this.slideExit = 0;
+    this.arcadeCamClose = false;
+    this.camera.distance = 16;
     this.character.setPosition(0, 0, 0);
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
     this.ui.setZone('WELCOME');
@@ -792,6 +798,16 @@ class App {
     }
   }
 
+  /** Tighten the camera into a 3rd-person view within 2 m of the arcade.
+   *  Hysteresis (2.0 m in / 2.6 m out) prevents flicker on the boundary;
+   *  CameraRig already eases the radius, so the change is cinematic. */
+  private updateArcadeCamera() {
+    const d = Math.hypot(this.ppos.x - this.arcadePos.x, this.ppos.z - this.arcadePos.z);
+    if (!this.arcadeCamClose && d < 2.0) this.arcadeCamClose = true;
+    else if (this.arcadeCamClose && d > 2.6) this.arcadeCamClose = false;
+    this.camera.distance = this.arcadeCamClose ? 7.5 : 16;
+  }
+
   private frame() {
     const dt = Math.min(this.engine.getDeltaTime() / 1000, 0.05);
     if (Math.abs(this.input.state.cameraX) > 0.05 || Math.abs(this.input.state.cameraZ) > 0.05) {
@@ -807,6 +823,7 @@ class App {
     } else {
       this.updateController(dt);
       this.world.update(dt, this.ppos.x);
+      this.updateArcadeCamera();
       this.camera.update(dt, new BABYLON.Vector3(this.ppos.x, this.ppos.y + 1, this.ppos.z), this.pvel.x * 0.3);
       this.exploreTime += dt;
       if (!this.droneTriggered && this.exploreTime >= 30) {
