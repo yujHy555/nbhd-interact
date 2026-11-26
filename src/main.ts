@@ -41,6 +41,7 @@ class App {
   private footSide = 1;
   private slideTimer = 0;
   private slideBuffer = 0; // RT tapped in the air is honoured on touchdown
+  private slideExit = 0;   // brief high-accel window for a smooth, reactive exit
 
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
@@ -486,6 +487,7 @@ class App {
     this.pvel.set(0, 0, 0);
     this.slideTimer = 0;
     this.slideBuffer = 0;
+    this.slideExit = 0;
     this.grounded = true;
     this.facing = Math.PI / 2;
     this.character.headingPivot.rotation.y = Math.PI / 2;
@@ -501,6 +503,7 @@ class App {
     this.pvel.set(0, 0, 0);
     this.slideTimer = 0;
     this.slideBuffer = 0;
+    this.slideExit = 0;
     this.character.setPosition(0, 0, 0);
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
     this.ui.setZone('WELCOME');
@@ -601,16 +604,17 @@ class App {
     if (this.slideBuffer > 0 && this.grounded && !uphill && Math.hypot(v.x, v.z) > 4) {
       this.slideTimer = 1.0; // snappy exit — control returns sooner
       this.slideBuffer = 0;
+      this.slideExit = 0;
       this.audio.slide();
       this.camera.punch(2);
       this.polish?.slideDust(new BABYLON.Vector3(p.x, p.y + 0.1, p.z), this.facing);
     }
     const finishSlide = () => {
-      // Resume AT the slide's end position with the velocity the controls
-      // currently ask for — run / walk / idle, no leftover coast or drift.
-      if (moveInput) { v.x = dx * maxSpeed; v.z = dz * maxSpeed; }
-      else { v.x = 0; v.z = 0; }
-      this.facing = moveInput ? Math.atan2(v.x, v.z) : this.facing;
+      // Open a short high-acceleration hand-off instead of snapping velocity.
+      // The target is re-read from live controls every frame, so the exit is
+      // reactive while the eased velocity keeps it perfectly smooth.
+      this.slideExit = 0.13;
+      if (moveInput) this.facing = Math.atan2(dx, dz);
     };
     if (this.slideTimer > 0) {
       this.slideTimer = Math.max(0, this.slideTimer - dt);
@@ -621,6 +625,7 @@ class App {
       this.slideTimer = 0;
       finishSlide();
     }
+    if (this.slideExit > 0) this.slideExit = Math.max(0, this.slideExit - dt);
     const sliding = this.slideTimer > 0;
 
     // ---- Travelator: a real conveyor belt ----
@@ -631,7 +636,9 @@ class App {
     const onBelt = belt > 0;
 
     // ---- Acceleration & crisp braking ----
-    const accel = this.grounded ? 30 : 10;
+    // During the slide exit, accelerate hard toward the LIVE control target —
+    // quick enough to feel instant, smooth enough to never snap a pose.
+    const accel = this.grounded ? (this.slideExit > 0 ? 62 : 30) : 10;
     const step = accel * dt;
     let tx: number, tz: number;
     if (moveInput) {
