@@ -7,7 +7,7 @@ FILES = [("Idle.fbx", "Idle"), ("Walking.fbx", "Walking"),
          ("Running.fbx", "Running"), ("Jumping.fbx", "Jumping"),
          ("Running Slide.fbx", "Slide"), ("Crouched Walking.fbx", "CrouchWalk")]
 
-# Clean scene
+# Clean scene — keep every clip EXACTLY as authored in the FBXs.
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 for a in list(bpy.data.actions):
@@ -32,41 +32,15 @@ for idx, (fname, clip) in enumerate(FILES):
         base_arm.name = "MixamoArmature"
         if base_mesh:
             base_mesh.name = "BlobothanCharacter"
-        # rename the imported action
         if acts:
             acts[0].name = clip
         print(f"BASE: {fname} arm={base_arm.name} mesh={base_mesh.name if base_mesh else None} action={acts[0].name if acts else None}")
     else:
-        # Copy animation from this import's action onto the BASE armature.
-        # Bone names are identical (all Mixamo), so we can just assign the
-        # action to the base armature via NLA strip with a unique name.
         src_action = acts[0] if acts else None
         if src_action is None:
             print(f"WARN: no action in {fname}")
             continue
-        src_action.name = clip  # e.g. Walking
-        # Bake out root motion: Mixamo clips translate the hips bone, which
-        # would slide the visible mesh inside the skeleton then snap back when
-        # the clip ends. Keep rotation, zero the location keys so clips play
-        # in place — the kinematic controller owns all world-space movement.
-        # Blender 4.4+/5.x uses layered actions; fall back to legacy fcurves.
-        all_fcurves = []
-        if hasattr(src_action, 'fcurves'):
-            all_fcurves = list(src_action.fcurves)
-        else:
-            for layer in getattr(src_action, 'layers', []):
-                for strip in layer.strips:
-                    for bag in getattr(strip, 'channelbags', []):
-                        all_fcurves.extend(list(bag.fcurves))
-        for fc in all_fcurves:
-            if 'Hips' in fc.data_path and fc.array_index < 3 and fc.keyframe_points:
-                base = fc.keyframe_points[0].co.y
-                for kp in fc.keyframe_points:
-                    kp.co.y = base
-                    kp.handle_left.y = base
-                    kp.handle_right.y = base
-        # Attach action to base armature as an NLA track so the glTF exporter
-        # exports each as a separate AnimationGroup.
+        src_action.name = clip
         if base_arm.animation_data is None:
             base_arm.animation_data_create()
         track = base_arm.animation_data.nla_tracks.new()
@@ -76,7 +50,6 @@ for idx, (fname, clip) in enumerate(FILES):
         strip.action_frame_end = src_action.frame_range[1]
         print(f"MERGED {fname} action={clip} range={tuple(src_action.frame_range)}")
 
-        # Remove the duplicate imported armature + meshes (keep only base)
         for o in new:
             if o is not base_arm and o is not base_mesh:
                 bpy.data.objects.remove(o, do_unlink=True)
