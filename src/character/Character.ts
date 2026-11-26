@@ -96,7 +96,7 @@ export class Character {
     scene.onAfterAnimationsObservable.add(() => {
       if (!this.mixamo) return;
       const cdt = this.scene.getEngine().getDeltaTime() / 1000;
-      this.cancelRootMotion(cdt);
+      this.cancelRootMotion();
       this.applyFootIK(cdt);
     });
     this.buildMaterials();
@@ -513,22 +513,17 @@ export class Character {
    *  controller owns the root; IK only supplements it on real slopes. */
   private footLift = 0;
 
-  // Root-motion cancellation. The hip drift is sampled after animation
-  // evaluation; a bounded one-frame trend lead keeps it on the pose that will
-  // actually render during the slide's fast crossfade recovery.
+  // Root-motion cancellation: measure the animated hips drift in world space
+  // and apply the exact inverse. A small bounded trend lead covers the
+  // crossfade phase lag without the overshoot of a full extrapolation.
   private compX = 0;
   private compZ = 0;
   private prevTargetX = 0;
   private prevTargetZ = 0;
 
-  /** Rest-pose hips offset from the collider (world space). Mixamo clips
-   *  translate the hips as root motion; the running-slide drifts ~1 m forward
-   *  then returns. We cancel that drift at runtime so the visible body stays
-   *  exactly on the collider and resumes idle/walk/run from the slide's end
-   *  position — the GLB and all its clips stay untouched. */
   private rootMotionRef: { x: number; z: number } | null = null;
 
-  private cancelRootMotion(dt: number) {
+  private cancelRootMotion() {
     if (!this.mixamo || !this.rootMotionRef) return;
     const gr = this.mixamo.root;
     const mesh = gr.getChildMeshes(false)
@@ -537,9 +532,6 @@ export class Character {
     const hips = mesh.skeleton.bones.find((b) => /Hips/i.test(b.name));
     if (!hips) return;
 
-    // Drop last frame's compensation so we measure the animation's raw drift,
-    // then offset the glTF root by the exact inverse — no feedback lag, and it
-    // tracks crossfades precisely.
     const savedX = gr.position.x, savedZ = gr.position.z;
     gr.position.x = 0; gr.position.z = 0;
     gr.computeWorldMatrix(true);
@@ -551,17 +543,12 @@ export class Character {
     const ez = (wp.z - rp.z) - this.rootMotionRef.z;
     gr.position.x = savedX; gr.position.z = savedZ;
 
-    // Project the world drift onto the character's local axes (heading pivot
-    // carries only yaw). glTF-root position is in that frame and unscaled.
     const yaw = this.headingPivot.rotation.y;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const targetZ = -(ex * fx + ez * fz);
     const targetX = -(ex * rx + ez * rz);
-    // Bounded one-frame lead cancels the crossfade phase lag without the
-    // oscillating overshoot that a full extrapolation produced.
-    const LEAD = 0.5;
-    const CAP = 0.3;
+    const LEAD = 0.5, CAP = 0.3;
     const lz = Math.max(-CAP, Math.min(CAP, (targetZ - this.prevTargetZ) * LEAD));
     const lx = Math.max(-CAP, Math.min(CAP, (targetX - this.prevTargetX) * LEAD));
     this.prevTargetZ = targetZ;
@@ -570,7 +557,6 @@ export class Character {
     this.compX = targetX + lx;
     gr.position.z = this.compZ;
     gr.position.x = this.compX;
-    // Refresh immediately so foot IK and rendering both see the final pose.
     gr.computeWorldMatrix(true);
   }
 

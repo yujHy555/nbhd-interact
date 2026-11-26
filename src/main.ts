@@ -642,9 +642,10 @@ class App {
     const onBelt = belt > 0;
 
     // ---- Acceleration & crisp braking ----
-    // During the slide exit, accelerate hard toward the LIVE control target —
-    // quick enough to feel instant, smooth enough to never snap a pose.
-    const accel = this.grounded ? (this.slideExit > 0 ? 62 : 30) : 10;
+    // Accelerate hard toward the LIVE control target on slide exit, easing the
+    // rate back down to normal so there is no step-change jerk mid-deceleration.
+    const exitK = this.slideExit > 0 ? this.slideExit / 0.13 : 0;
+    const accel = this.grounded ? 30 + 32 * exitK : 10;
     const step = accel * dt;
     let tx: number, tz: number;
     if (moveInput) {
