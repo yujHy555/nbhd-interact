@@ -512,10 +512,14 @@ export class Character {
    *  controller owns the root; IK only supplements it on real slopes. */
   private footLift = 0;
 
-  // Exact per-frame root-motion cancellation — keeps the visible body on the
-  // collider at every point of a clip, including the slide's fast recovery.
+  // Root-motion cancellation. The clip's hip drift is sampled after animation
+  // evaluation, but the crossfade weights are applied a frame later — so the
+  // raw target leads the rendered pose during a fast unwind. A small trend
+  // extrapolation cancels that one-frame lag.
   private compX = 0;
   private compZ = 0;
+  private prevTargetX = 0;
+  private prevTargetZ = 0;
 
   /** Rest-pose hips offset from the collider (world space). Mixamo clips
    *  translate the hips as root motion; the running-slide drifts ~1 m forward
@@ -554,11 +558,17 @@ export class Character {
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const targetZ = -(ex * fx + ez * fz);
     const targetX = -(ex * rx + ez * rz);
-    // Apply the exact inverse every frame. Any rate limiting here makes the
-    // body lag the collider when the clip's root motion unwinds — up to 0.8 m
-    // at the slide exit, which reads as the player being in the wrong place.
-    this.compX = targetX;
-    this.compZ = targetZ;
+    // Extrapolate one frame of trend so the correction lands on the pose that
+    // will actually be rendered, not the one from the previous crossfade step.
+    // Cap the lead so it cannot overshoot badly if the trend reverses.
+    const LEAD = 0.85;
+    const CAP = 0.5;
+    const lz = Math.max(-CAP, Math.min(CAP, (targetZ - this.prevTargetZ) * LEAD));
+    const lx = Math.max(-CAP, Math.min(CAP, (targetX - this.prevTargetX) * LEAD));
+    this.prevTargetZ = targetZ;
+    this.prevTargetX = targetX;
+    this.compZ = targetZ + lz;
+    this.compX = targetX + lx;
     gr.position.z = this.compZ;
     gr.position.x = this.compX;
     // Refresh immediately so foot IK and rendering both see the final pose.
