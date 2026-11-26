@@ -157,14 +157,9 @@ class App {
         this.character.unbindMixamo();
       }
     });
-    // Extra mocap clips ship as animation-only GLBs. Chain AFTER the hero load
-    // — MixamoController.load() clears its clipMap when it resolves, so adding
-    // clips in parallel would get wiped by that clear (a startup race).
-    const extraClips = heroLoad.then(() => Promise.all([
-      this.mixamo.addClip('/models/', 'Slide.glb', 'slide'),
-      this.mixamo.addClip('/models/', 'CrouchWalk.glb', 'crouchwalk'),
-    ]));
-    this.assetLoads.push(heroLoad, extraClips);
+    // Slide + crouch-walk are merged into BlobothanChar.glb via NLA strips, so
+    // they share the hero's skeleton and animate it correctly (no T-pose).
+    this.assetLoads.push(heroLoad);
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.enableShadowReceivers();
     this.loadRoad();

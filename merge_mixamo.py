@@ -4,7 +4,8 @@ SRC = r"C:\Users\rorym\OneDrive\Desktop\NBHD_INTERACT\skinned_animations_mixamo"
 OUT = r"C:\Users\rorym\OneDrive\Desktop\NBHD_INTERACT\public\models\BlobothanChar.glb"
 
 FILES = [("Idle.fbx", "Idle"), ("Walking.fbx", "Walking"),
-         ("Running.fbx", "Running"), ("Jumping.fbx", "Jumping")]
+         ("Running.fbx", "Running"), ("Jumping.fbx", "Jumping"),
+         ("Running Slide.fbx", "Slide"), ("Crouched Walking.fbx", "CrouchWalk")]
 
 # Clean scene
 bpy.ops.object.select_all(action='SELECT')
