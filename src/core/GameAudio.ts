@@ -131,5 +131,14 @@ export class GameAudio {
   }
   public whoosh() { this.noise(0.18, 0.06, 1400, 'bandpass'); }
 
+  /** Sliding on concrete: a gritty scrape that peaks as the body drops, a low
+   *  body-weight thud, and an air rush tail as the slide carries forward. */
+  public slide() {
+    this.noise(0.34, 0.13, 1700, 'bandpass');
+    this.noise(0.24, 0.09, 520, 'lowpass');
+    this.tone(210, 0.26, 'sine', 0.11, 68);
+    this.tone(560, 0.14, 'triangle', 0.05, 260);
+  }
+
   public dispose() { this.ctx?.close(); this.ctx = null; }
 }

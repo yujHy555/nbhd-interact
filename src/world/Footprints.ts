@@ -22,21 +22,29 @@ export class Footprints {
     cv.width = cv.height = S;
     const ctx = cv.getContext('2d')!;
     ctx.clearRect(0, 0, S, S);
+    // Two-tone stamp: a pale dust halo (reads on the dark road) around a dark
+    // core (reads on pale concrete), so it is visible on every surface.
     const paint = (cx: number, cy: number, rx: number, ry: number) => {
-      const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(rx, ry));
-      g.addColorStop(0, 'rgba(18,24,30,0.85)');
-      g.addColorStop(0.6, 'rgba(18,24,30,0.55)');
-      g.addColorStop(1, 'rgba(18,24,30,0)');
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
       ctx.translate(-cx, -cy);
-      ctx.fillStyle = g;
+      const halo = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(rx, ry) * 1.35);
+      halo.addColorStop(0, 'rgba(205,200,190,0.55)');
+      halo.addColorStop(0.55, 'rgba(170,166,158,0.32)');
+      halo.addColorStop(1, 'rgba(160,156,148,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(cx, cy, Math.max(rx, ry) * 1.35, 0, Math.PI * 2); ctx.fill();
+      const core = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(rx, ry));
+      core.addColorStop(0, 'rgba(26,31,36,0.92)');
+      core.addColorStop(0.6, 'rgba(38,44,50,0.7)');
+      core.addColorStop(1, 'rgba(45,50,55,0)');
+      ctx.fillStyle = core;
       ctx.beginPath(); ctx.arc(cx, cy, Math.max(rx, ry), 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     };
-    paint(S * 0.5, S * 0.36, 9, 13); // toe
-    paint(S * 0.5, S * 0.68, 7, 8);  // heel
+    paint(S * 0.5, S * 0.34, 10, 14); // toe
+    paint(S * 0.5, S * 0.70, 8, 9);   // heel
     const tex = new BABYLON.Texture(cv.toDataURL(), this.scene, false, true);
     tex.hasAlpha = true;
 
@@ -48,12 +56,14 @@ export class Footprints {
       (mat.opacityTexture as BABYLON.Texture).getAlphaFromRGB = false;
       mat.useAlphaFromDiffuseTexture = true;
       mat.diffuseColor = BABYLON.Color3.Black();
-      mat.emissiveColor = BABYLON.Color3.Black();
+      // Emissive drives the colour when lighting is disabled — a black
+      // emissive made the stamp invisible on the dark road.
+      mat.emissiveColor = BABYLON.Color3.White();
       mat.disableLighting = true;
       mat.backFaceCulling = false;
       mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
       mat.alpha = 0;
-      const mesh = BABYLON.MeshBuilder.CreateGround(`footprint${i}`, { width: 0.42, height: 0.26 }, this.scene);
+      const mesh = BABYLON.MeshBuilder.CreateGround(`footprint${i}`, { width: 0.5, height: 0.32 }, this.scene);
       mesh.material = mat;
       mesh.isPickable = false;
       mesh.receiveShadows = false;
@@ -74,7 +84,7 @@ export class Footprints {
     p.mesh.position.set(fx, this.groundAt(fx, fz) + 0.03, fz);
     p.mesh.rotation.y = -facing;
     p.mesh.scaling.setAll(1);
-    p.mat.alpha = 0.85;
+    p.mat.alpha = 0.95;
     p.life = 1;
     p.mesh.setEnabled(true);
   }
@@ -83,7 +93,7 @@ export class Footprints {
     for (const p of this.pool) {
       if (p.life <= 0) continue;
       p.life = Math.max(0, p.life - dt);
-      p.mat.alpha = 0.85 * p.life;
+      p.mat.alpha = 0.95 * p.life;
       if (p.life <= 0) p.mesh.setEnabled(false);
     }
   }

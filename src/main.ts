@@ -435,7 +435,7 @@ class App {
     mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
     // Painted on a flat vertical plane facing the side-scroll camera.
     const billboard = BABYLON.MeshBuilder.CreatePlane('houseBillboard', { width: 6, height: 6 }, this.scene);
-    // Opposite side of the road (which runs along z=0) from the arcade.
+    // Same side of the road (z=+7) as the arcade cabinet.
     billboard.position.set(64, 3, 7);
     billboard.material = mat;
     billboard.isPickable = false;
@@ -449,9 +449,9 @@ class App {
       const root = new BABYLON.TransformNode('arcadeStand', this.scene);
       // Real-world arcade scale — the GLB is already ~0.9 x 2 x 0.86 m.
       root.scaling.setAll(1.0);
-      // Sit on the far side of the play strip; rotate so the screen faces the
-      // side-scroll camera (which sits at negative Z looking toward +Z).
-      root.position.set(34, 0, -7);
+      // Same side of the road as the house billboard (+Z). The screen still
+      // faces the side-scroll camera at negative Z.
+      root.position.set(34, 0, 7);
       root.rotation.y = Math.PI;
       for (const m of res.meshes) {
         if (!m.parent) m.parent = root;
@@ -463,7 +463,7 @@ class App {
       }
       for (const n of res.transformNodes) if (!n.parent) n.parent = root;
       // Solid collision box matching the cabinet footprint (0.9 x 2 x 0.86).
-      this.world.colliders.push({ x: 34, y: 1.0, z: -7, w: 0.85, h: 2.0, d: 0.8 });
+      this.world.colliders.push({ x: 34, y: 1.0, z: 7, w: 0.85, h: 2.0, d: 0.8 });
       for (const m of root.getChildMeshes(false)) if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
     } catch (e) {
       console.warn('[Arcade] load failed:', e);
@@ -595,19 +595,31 @@ class App {
     // the full animation (~1 s). Holding the button does nothing extra.
     // A tap in the air is buffered so it fires the instant you land running.
     this.slideBuffer = s.slidePressed ? 1.0 : Math.max(0, this.slideBuffer - dt);
-    if (this.slideBuffer > 0 && this.grounded && Math.hypot(v.x, v.z) > 4) {
-      this.slideTimer = 1.55;
+    // Slides are downhill-only. Uphill ramps keep full running control.
+    const groundSlope = this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0;
+    const uphill = Math.abs(groundSlope) > 0.02 && v.x * groundSlope > 0.5;
+    if (this.slideBuffer > 0 && this.grounded && !uphill && Math.hypot(v.x, v.z) > 4) {
+      this.slideTimer = 1.0; // snappy exit — control returns sooner
       this.slideBuffer = 0;
+      this.audio.slide();
+      this.camera.punch(2);
+      this.polish?.slideDust(new BABYLON.Vector3(p.x, p.y + 0.1, p.z), this.facing);
     }
+    const finishSlide = () => {
+      // Resume AT the slide's end position with the velocity the controls
+      // currently ask for — run / walk / idle, no leftover coast or drift.
+      if (moveInput) { v.x = dx * maxSpeed; v.z = dz * maxSpeed; }
+      else { v.x = 0; v.z = 0; }
+      this.facing = moveInput ? Math.atan2(v.x, v.z) : this.facing;
+    };
     if (this.slideTimer > 0) {
       this.slideTimer = Math.max(0, this.slideTimer - dt);
-      if (this.slideTimer === 0) {
-        // Resume AT the slide's end position with the velocity the controls
-        // currently ask for — run / walk / idle, no leftover coast or drift.
-        if (moveInput) { v.x = dx * maxSpeed; v.z = dz * maxSpeed; }
-        else { v.x = 0; v.z = 0; }
-        this.facing = moveInput ? Math.atan2(v.x, v.z) : this.facing;
-      }
+      if (this.slideTimer === 0) finishSlide();
+    }
+    // Jump (A / Space) cuts the slide short — immediate player control.
+    if (s.jumpPressed && this.slideTimer > 0) {
+      this.slideTimer = 0;
+      finishSlide();
     }
     const sliding = this.slideTimer > 0;
 
@@ -766,7 +778,7 @@ class App {
     this.character.setState(state, v.y, dir);
     this.character.update(dt, planSpeed, this.facing);
     this.character.setSlopeAngle(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0);
-    const stepped = this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), !this.grounded, state);
+    const stepped = this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), this.grounded, state);
     if (stepped) {
       this.footSide *= -1;
       this.footprints.spawn(p.x, p.z, this.facing, this.footSide);

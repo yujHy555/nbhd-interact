@@ -123,6 +123,28 @@ export class Polish {
     setTimeout(() => { ps.stop(); setTimeout(() => ps.dispose(), 900); }, 60);
   }
 
+  /** Ground-hugging concrete dust kicked up at the start of a slide. */
+  public slideDust(pos: BABYLON.Vector3, heading: number) {
+    const ps = new BABYLON.ParticleSystem('slideDust', 24, this.scene);
+    ps.particleTexture = this.motes.particleTexture;
+    ps.emitter = pos.clone();
+    ps.color1 = new BABYLON.Color4(0.62, 0.64, 0.66, 0.55);
+    ps.color2 = new BABYLON.Color4(0.85, 0.83, 0.78, 0.35);
+    ps.colorDead = new BABYLON.Color4(0.5, 0.5, 0.5, 0);
+    ps.minSize = 0.12; ps.maxSize = 0.38;
+    ps.minLifeTime = 0.25; ps.maxLifeTime = 0.6;
+    ps.emitRate = 140; ps.manualEmitCount = 20;
+    ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
+    // Kick BACKWARD from the travel direction, low and wide.
+    const bx = -Math.sin(heading), bz = -Math.cos(heading);
+    ps.direction1 = new BABYLON.Vector3(bx * 1.0 - 0.5, 0.1, bz * 1.0 - 0.5);
+    ps.direction2 = new BABYLON.Vector3(bx * 2.2 + 0.5, 0.5, bz * 2.2 + 0.5);
+    ps.minEmitPower = 0.4; ps.maxEmitPower = 1.5;
+    ps.updateSpeed = 0.01;
+    ps.start();
+    setTimeout(() => { ps.stop(); setTimeout(() => ps.dispose(), 650); }, 60);
+  }
+
   public getPipeline() { return this.pipeline; }
   public dispose() {
     this.motes.dispose();
