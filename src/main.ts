@@ -40,6 +40,7 @@ class App {
   private footprints!: Footprints;
   private footSide = 1;
   private slideTimer = 0;
+  private slideBuffer = 0; // RT tapped in the air is honoured on touchdown
 
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
@@ -484,6 +485,7 @@ class App {
     this.ppos.set(2.4, 0, 0);
     this.pvel.set(0, 0, 0);
     this.slideTimer = 0;
+    this.slideBuffer = 0;
     this.grounded = true;
     this.facing = Math.PI / 2;
     this.character.headingPivot.rotation.y = Math.PI / 2;
@@ -498,6 +500,7 @@ class App {
     this.ppos.set(0, 0, 0);
     this.pvel.set(0, 0, 0);
     this.slideTimer = 0;
+    this.slideBuffer = 0;
     this.character.setPosition(0, 0, 0);
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
     this.ui.setZone('WELCOME');
@@ -590,7 +593,12 @@ class App {
     const maxSpeed = running ? 6.2 : 3.0;
     // Slide is a LATCHED one-shot: a single RT press while running commits to
     // the full animation (~1 s). Holding the button does nothing extra.
-    if (s.slidePressed && this.grounded && Math.hypot(v.x, v.z) > 4) this.slideTimer = 1.55;
+    // A tap in the air is buffered so it fires the instant you land running.
+    this.slideBuffer = s.slidePressed ? 1.0 : Math.max(0, this.slideBuffer - dt);
+    if (this.slideBuffer > 0 && this.grounded && Math.hypot(v.x, v.z) > 4) {
+      this.slideTimer = 1.55;
+      this.slideBuffer = 0;
+    }
     if (this.slideTimer > 0) {
       this.slideTimer = Math.max(0, this.slideTimer - dt);
       if (this.slideTimer === 0) {

@@ -101,6 +101,13 @@ export class World {
       rail.rotation.z = Math.atan2(y1 - y0, w); // matches the tread gradient
       rail.material = railMat;
       rail.receiveShadows = true;
+      // Solid barrier so the player can't walk through the silver side rails.
+      // Slightly taller than the visual rail so the step-up allowance in
+      // wallAt() doesn't skip it while climbing the ramp.
+      this.colliders.push({
+        x: cx, y: (y0 + y1) / 2 + 0.25, z: zz,
+        w, h: 0.9, d: 0.16,
+      });
     });
 
     // Bolted low edge
