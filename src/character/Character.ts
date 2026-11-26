@@ -513,22 +513,13 @@ export class Character {
    *  controller owns the root; IK only supplements it on real slopes. */
   private footLift = 0;
 
-  // Exact per-frame root-motion cancellation — keeps the visible body on the
-  // collider through every clip change, including the slide's fast recovery.
+  // Root-motion cancellation. The hip drift is sampled after animation
+  // evaluation; a bounded one-frame trend lead keeps it on the pose that will
+  // actually render during the slide's fast crossfade recovery.
   private compX = 0;
   private compZ = 0;
-  // During the slide→run crossfade the bone-pose measurement lags the weight
-  // blend, so we drive the cancellation from the SAME smoothstep curve instead.
-  private fadeOut = 0;
-  private fadeOutX = 0;
-  private fadeOutZ = 0;
-
-  /** Begin the deterministic slide-exit cancellation, from the current pose. */
-  public beginSlideExit() {
-    this.fadeOutX = this.compX;
-    this.fadeOutZ = this.compZ;
-    this.fadeOut = 0.16; // matches Mixamo's crossfade FADE
-  }
+  private prevTargetX = 0;
+  private prevTargetZ = 0;
 
   /** Rest-pose hips offset from the collider (world space). Mixamo clips
    *  translate the hips as root motion; the running-slide drifts ~1 m forward
@@ -567,20 +558,16 @@ export class Character {
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const targetZ = -(ex * fx + ez * fz);
     const targetX = -(ex * rx + ez * rz);
-    if (this.fadeOut > 0) {
-      // Drive the unwind with the crossfade's own smoothstep — the measured
-      // bone pose lags the weight blend, which caused a stutter at hand-off.
-      this.fadeOut = Math.max(0, this.fadeOut - dt);
-      const k = Math.max(0, Math.min(1, 1 - this.fadeOut / 0.16));
-      const e = k * k * (3 - 2 * k);
-      this.compX = this.fadeOutX * (1 - e);
-      this.compZ = this.fadeOutZ * (1 - e);
-    } else {
-      this.compZ = targetZ;
-      this.compX = targetX;
-      this.fadeOutX = this.compX;
-      this.fadeOutZ = this.compZ;
-    }
+    // Bounded one-frame lead cancels the crossfade phase lag without the
+    // oscillating overshoot that a full extrapolation produced.
+    const LEAD = 0.5;
+    const CAP = 0.3;
+    const lz = Math.max(-CAP, Math.min(CAP, (targetZ - this.prevTargetZ) * LEAD));
+    const lx = Math.max(-CAP, Math.min(CAP, (targetX - this.prevTargetX) * LEAD));
+    this.prevTargetZ = targetZ;
+    this.prevTargetX = targetX;
+    this.compZ = targetZ + lz;
+    this.compX = targetX + lx;
     gr.position.z = this.compZ;
     gr.position.x = this.compX;
     // Refresh immediately so foot IK and rendering both see the final pose.

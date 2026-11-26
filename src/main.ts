@@ -620,7 +620,6 @@ class App {
       // The target is re-read from live controls every frame, so the exit is
       // reactive while the eased velocity keeps it perfectly smooth.
       this.slideExit = 0.13;
-      this.character.beginSlideExit();
       if (moveInput) this.facing = Math.atan2(dx, dz);
     };
     if (this.slideTimer > 0) {
