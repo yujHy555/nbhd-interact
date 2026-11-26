@@ -157,7 +157,7 @@ export class MixamoController implements MixamoBinding {
 
     // Cancel an in-flight fade so rapid transitions never stack observers.
     if (this.fadeObs) {
-      this.scene.onBeforeRenderObservable.remove(this.fadeObs);
+      this.scene.onBeforeAnimationsObservable.remove(this.fadeObs);
       this.fadeObs = null;
     }
     const old = this.current;
@@ -182,7 +182,10 @@ export class MixamoController implements MixamoBinding {
     group.weight = 0;
     let t = 0;
     const FADE = 0.16; // seconds — snappy, AAA feel
-    this.fadeObs = this.scene.onBeforeRenderObservable.add(() => {
+    // Update weights BEFORE animation evaluation. Updating them afterwards
+    // (onBeforeRender) makes the clip pose one frame stale relative to the
+    // foot-IK / root-motion pass, which shows up as a stutter at hand-offs.
+    this.fadeObs = this.scene.onBeforeAnimationsObservable.add(() => {
       t += this.scene.getEngine().getDeltaTime() / 1000 / FADE;
       const k = Math.min(1, t);
       const e = k * k * (3 - 2 * k); // smoothstep
@@ -191,7 +194,7 @@ export class MixamoController implements MixamoBinding {
       if (k >= 1) {
         old.stop();
         old.weight = 0;
-        this.scene.onBeforeRenderObservable.remove(this.fadeObs!);
+        this.scene.onBeforeAnimationsObservable.remove(this.fadeObs!);
         this.fadeObs = null;
       }
     });
@@ -212,7 +215,7 @@ export class MixamoController implements MixamoBinding {
   }
 
   public stopAll() {
-    if (this.fadeObs) { this.scene.onBeforeRenderObservable.remove(this.fadeObs); this.fadeObs = null; }
+    if (this.fadeObs) { this.scene.onBeforeAnimationsObservable.remove(this.fadeObs); this.fadeObs = null; }
     for (const g of this.animationGroups) { g.stop(); g.weight = 0; g.speedRatio = 1; }
     this.current = null;
   }
