@@ -437,7 +437,8 @@ class App {
     mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
     // Painted on a flat vertical plane facing the side-scroll camera.
     const billboard = BABYLON.MeshBuilder.CreatePlane('houseBillboard', { width: 6, height: 6 }, this.scene);
-    billboard.position.set(64, 3, -7);
+    // Opposite side of the road (which runs along z=0) from the arcade.
+    billboard.position.set(64, 3, 7);
     billboard.material = mat;
     billboard.isPickable = false;
     billboard.applyFog = false;
