@@ -448,7 +448,7 @@ class App {
       root.scaling.setAll(1.0);
       // Sit on the far side of the play strip; rotate so the screen faces the
       // side-scroll camera (which sits at negative Z looking toward +Z).
-      root.position.set(34, 0, -4.5);
+      root.position.set(34, 0, -7);
       root.rotation.y = Math.PI;
       for (const m of res.meshes) {
         if (!m.parent) m.parent = root;
@@ -460,7 +460,7 @@ class App {
       }
       for (const n of res.transformNodes) if (!n.parent) n.parent = root;
       // Solid collision box matching the cabinet footprint (0.9 x 2 x 0.86).
-      this.world.colliders.push({ x: 34, y: 1.0, z: -4.5, w: 0.95, h: 2.0, d: 0.9 });
+      this.world.colliders.push({ x: 34, y: 1.0, z: -7, w: 0.85, h: 2.0, d: 0.8 });
       for (const m of root.getChildMeshes(false)) if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
     } catch (e) {
       console.warn('[Arcade] load failed:', e);
@@ -584,6 +584,8 @@ class App {
 
     const running = moveInput && (s.run || this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
     const maxSpeed = running ? 6.2 : 3.0;
+    // Slide is a committed running move — only valid at running speed.
+    const sliding = s.slide && this.grounded && Math.hypot(v.x, v.z) > 4;
 
     // ---- Travelator: a real conveyor belt ----
     // On the belt, the ground itself moves at `belt` m/s along +X. When the
@@ -607,6 +609,10 @@ class App {
       // belt's carry speed when the player jumps off the travelator.
       tx = v.x;
       tz = v.z;
+    }
+    // During a slide, preserve momentum — no braking back toward a walk target.
+    if (sliding) {
+      tx = v.x; tz = v.z;
     }
     v.x += Math.max(-step, Math.min(step, tx - v.x));
     v.z += Math.max(-step, Math.min(step, tz - v.z));
@@ -707,17 +713,12 @@ class App {
     // The Mixamo rig faces +Z at rotation 0 (verified visually: at yaw 0 the
     // camera at -Z sees her BACK). atan2(dx,dz) therefore points her exactly
     // along the desired camera-relative travel direction.
-    if (moveInput) this.facing = Math.atan2(dx, dz);
+    // Lock facing during a slide — the slide animation has hip/root rotation
+    // that would otherwise feed back and spin the player in a wide circle.
+    if (moveInput && !sliding) this.facing = Math.atan2(dx, dz);
 
     const crouching = this.input.state.crouch && this.grounded;
     const planSpeed = Math.hypot(v.x, v.z);
-    const sliding = this.input.state.slide && this.grounded;
-    // A slide from rest still surges forward so the animation reads clearly.
-    if (sliding && this.character.state !== 'slide' && planSpeed < 2) {
-      const dirX = Math.sin(this.facing), dirZ = Math.cos(this.facing);
-      v.x += dirX * 5; v.z += dirZ * 5;
-      this.audio.whoosh();
-    }
     // Hysteresis stops idle/walk flipping back and forth at the threshold,
     // which was restarting the clip mid-stride ("freezing" animation).
     const idleThreshold = this.character.state === 'idle' ? 0.38 : 0.16;
