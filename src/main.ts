@@ -39,6 +39,7 @@ class App {
   private drone!: Drone;
   private footprints!: Footprints;
   private footSide = 1;
+  private slideTimer = 0;
 
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
@@ -585,8 +586,11 @@ class App {
 
     const running = moveInput && (s.run || this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
     const maxSpeed = running ? 6.2 : 3.0;
-    // Slide is a committed running move — only valid at running speed.
-    const sliding = s.slide && this.grounded && Math.hypot(v.x, v.z) > 4;
+    // Slide is a LATCHED one-shot: a single RT press while running commits to
+    // the full animation (~1 s). Holding the button does nothing extra.
+    if (s.slidePressed && this.grounded && Math.hypot(v.x, v.z) > 4) this.slideTimer = 1.55;
+    if (this.slideTimer > 0) this.slideTimer = Math.max(0, this.slideTimer - dt);
+    const sliding = this.slideTimer > 0;
 
     // ---- Travelator: a real conveyor belt ----
     // On the belt, the ground itself moves at `belt` m/s along +X. When the

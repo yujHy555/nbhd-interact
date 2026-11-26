@@ -14,6 +14,7 @@ export interface InputState {
   run: boolean;     // Shift key OR gamepad shoulder → sprint / run animation
   crouch: boolean;  // Ctrl / C → crouched walk
   slide: boolean;   // V key / gamepad RT → slide
+  slidePressed: boolean; // edge: single press of RT / V
   anyInput: boolean;
 }
 
@@ -21,7 +22,7 @@ export interface InputState {
 export class Input {
   public state: InputState = {
     left: false, right: false, forward: false, back: false,
-    jump: false, jumpPressed: false, axisX: 0, axisZ: 0, cameraX: 0, cameraZ: 0, run: false, crouch: false, slide: false, anyInput: false,
+    jump: false, jumpPressed: false, axisX: 0, axisZ: 0, cameraX: 0, cameraZ: 0, run: false, crouch: false, slide: false, slidePressed: false, anyInput: false,
   };
   private keys = new Set<string>();
   private justPressed = new Set<string>();
@@ -69,6 +70,7 @@ export class Input {
     this.state.run = false;
     this.state.crouch = this.keys.has('crouch');
     this.state.slide = this.keys.has('slide');
+    this.state.slidePressed = snap.has('slide');
 
     // Gamepad — left stick movement, A button jump
     if (navigator.getGamepads) {
@@ -92,7 +94,11 @@ export class Input {
         // Shoulder / stick-click = sprint (the gamepad "Shift equivalent")
         // Shoulders / stick clicks sprint; RT (button 7) triggers the slide.
         this.state.run = btn(5) || btn(6) || btn(10) || btn(11);
-        if (btn(7)) this.state.slide = true;
+        if (btn(7)) {
+          this.state.slide = true;
+          if (!this.padPrev['slide']) this.state.slidePressed = true;
+        }
+        this.padPrev['slide'] = btn(7);
       }
     }
 
