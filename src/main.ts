@@ -13,6 +13,7 @@ import { World, Pickup, ZoneMarker, SlopeCollider } from './world/World';
 import { UI } from './ui/UI';
 import { Minimap } from './ui/Minimap';
 import { Drone } from './world/Drone';
+import { Footprints } from './world/Footprints';
 import { PixelPortal } from './world/PixelPortal';
 import { SciFiCity } from './world/SciFiCity';
 
@@ -36,6 +37,8 @@ class App {
   private ui!: UI;
   private minimap!: Minimap;
   private drone!: Drone;
+  private footprints!: Footprints;
+  private footSide = 1;
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
   private droneTriggered = false;
@@ -104,6 +107,9 @@ class App {
     const mapCanvas = document.getElementById('minimap') as HTMLCanvasElement | null;
     if (mapCanvas) this.minimap = new Minimap(mapCanvas, this.world);
 
+    // Fading ground footprints — placed on the exact sampled surface.
+    this.footprints = new Footprints(this.scene, (x, z) => this.surfaceAt(x, z, this.ppos.y + 0.6));
+
     this.character = new Character(this.scene);
     // Foot IK samples the exact surface under each shoe — including the
     // analytic ramp plane, so the foot pin is precise even while climbing.
@@ -151,7 +157,14 @@ class App {
         this.character.unbindMixamo();
       }
     });
-    this.assetLoads.push(heroLoad);
+    // Extra mocap clips ship as animation-only GLBs. Chain AFTER the hero load
+    // — MixamoController.load() clears its clipMap when it resolves, so adding
+    // clips in parallel would get wiped by that clear (a startup race).
+    const extraClips = heroLoad.then(() => Promise.all([
+      this.mixamo.addClip('/models/', 'Slide.glb', 'slide'),
+      this.mixamo.addClip('/models/', 'CrouchWalk.glb', 'crouchwalk'),
+    ]));
+    this.assetLoads.push(heroLoad, extraClips);
     for (const m of this.character.getMeshes()) this.env.registerShadowCaster(m);
     this.enableShadowReceivers();
     this.loadRoad();
@@ -191,6 +204,10 @@ class App {
     this.pixelPortal = new PixelPortal(this.scene, this.camera.getCamera(), (pixel) => {
       this.ui.setZone(pixel ? 'PIXEL WORLD' : 'NEIGHBOURHOOD');
     });
+
+    // Scenery: cardboard house billboard beside the sci-fi building + arcade.
+    this.loadHouseBillboard();
+    this.assetLoads.push(this.loadArcade());
 
     // Cinematic scan drone — one-shot encounter 30 s into the level
     this.createDrone();
@@ -403,6 +420,57 @@ class App {
   }
   private collapsing = false;
 
+  /** Cardboard house billboard placed beside the sci-fi building. */
+  private loadHouseBillboard() {
+    const tex = new BABYLON.Texture('/art/house_alpha_01.png', this.scene, false, true);
+    tex.hasAlpha = true;
+    const mat = new BABYLON.StandardMaterial('houseBillboardMat', this.scene);
+    mat.diffuseTexture = tex;
+    mat.emissiveTexture = tex;
+    mat.opacityTexture = tex;
+    (mat.opacityTexture as BABYLON.Texture).getAlphaFromRGB = false;
+    mat.useAlphaFromDiffuseTexture = true;
+    mat.diffuseColor = BABYLON.Color3.Black();
+    mat.emissiveColor = new BABYLON.Color3(0.85, 0.85, 0.85);
+    mat.disableLighting = true;
+    mat.backFaceCulling = false;
+    mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+    // Painted on a flat vertical plane facing the side-scroll camera.
+    const billboard = BABYLON.MeshBuilder.CreatePlane('houseBillboard', { width: 6, height: 6 }, this.scene);
+    billboard.position.set(64, 3, -7);
+    billboard.material = mat;
+    billboard.isPickable = false;
+    billboard.applyFog = false;
+  }
+
+  /** Place the arcade cabinet as scenery just past the first travelator. */
+  private async loadArcade() {
+    try {
+      const res = await BABYLON.SceneLoader.ImportMeshAsync('', '/models/arcade/', 'arcade_01.glb', this.scene);
+      const root = new BABYLON.TransformNode('arcadeStand', this.scene);
+      // Real-world arcade scale — the GLB is already ~0.9 x 2 x 0.86 m.
+      root.scaling.setAll(1.0);
+      // Sit on the far side of the play strip; rotate so the screen faces the
+      // side-scroll camera (which sits at negative Z looking toward +Z).
+      root.position.set(34, 0, -4.5);
+      root.rotation.y = Math.PI;
+      for (const m of res.meshes) {
+        if (!m.parent) m.parent = root;
+        m.isPickable = false;
+        m.receiveShadows = true;
+        m.applyFog = false;
+        const mat = m.material as BABYLON.PBRMaterial;
+        if (mat && mat.metallic !== undefined) mat.roughness = Math.max(0.6, mat.roughness ?? 0.6);
+      }
+      for (const n of res.transformNodes) if (!n.parent) n.parent = root;
+      // Solid collision box matching the cabinet footprint (0.9 x 2 x 0.86).
+      this.world.colliders.push({ x: 34, y: 1.0, z: -4.5, w: 0.95, h: 2.0, d: 0.9 });
+      for (const m of root.getChildMeshes(false)) if (m instanceof BABYLON.Mesh) this.env.registerShadowCaster(m);
+    } catch (e) {
+      console.warn('[Arcade] load failed:', e);
+    }
+  }
+
   private createDrone() {
     this.drone?.dispose();
     this.drone = new Drone(this.scene, () => this.audio.zone(), (m) => this.env.unregisterShadowCaster(m));
@@ -612,7 +680,13 @@ class App {
       if (this.wallAt(cx, nz, p.y, radius)) v.z *= 0.15; else cz = nz;
 
       const surf = this.surfaceAt(cx, cz, p.y);
-      if (v.y <= 0 && ny <= surf) {
+      // One-way platforms: jumping up through a platform from beneath must NOT
+      // snap us onto its top. Two valid land cases remain:
+      //   (a) feet were already at/above the surface (falling onto it), or
+      //   (b) a small step-up from the ground (e.g. the 0.22 m travelator belt).
+      const cameFromAbove = p.y >= surf - 0.08;
+      const steppingUp = wasGrounded && surf - p.y <= 0.25;
+      if (v.y <= 0 && ny <= surf && (cameFromAbove || steppingUp)) {
         if (!wasGrounded && v.y < -1.5) landed = true;
         p.y = surf; v.y = 0; this.grounded = true;
       } else {
@@ -639,8 +713,15 @@ class App {
     // along the desired camera-relative travel direction.
     if (moveInput) this.facing = Math.atan2(dx, dz);
 
-    const crouching = (this.keys.has('ControlLeft') || this.keys.has('KeyC')) && this.grounded;
+    const crouching = this.input.state.crouch && this.grounded;
     const planSpeed = Math.hypot(v.x, v.z);
+    const sliding = this.input.state.slide && this.grounded;
+    // A slide from rest still surges forward so the animation reads clearly.
+    if (sliding && this.character.state !== 'slide' && planSpeed < 2) {
+      const dirX = Math.sin(this.facing), dirZ = Math.cos(this.facing);
+      v.x += dirX * 5; v.z += dirZ * 5;
+      this.audio.whoosh();
+    }
     // Hysteresis stops idle/walk flipping back and forth at the threshold,
     // which was restarting the clip mid-stride ("freezing" animation).
     const idleThreshold = this.character.state === 'idle' ? 0.38 : 0.16;
@@ -648,7 +729,8 @@ class App {
     let dir: MoveDir = 'idle';
     if (!this.grounded) state = this.tripleJumpFx > 0 ? 'doubleJump' : (this.doubleJumpFx > 0 ? 'doubleJump' : (v.y > 0.6 ? 'jump' : 'fall'));
     else if (onBelt && !moveInput) state = 'idle'; // carried calmly by the belt
-    else if (crouching) state = 'crouch';
+    else if (sliding) state = 'slide';
+    else if (crouching) state = planSpeed > 0.4 ? 'crouchwalk' : 'crouch';
     else if (planSpeed > idleThreshold) {
       const fx = Math.sin(this.facing), fz = Math.cos(this.facing); // model forward = (sinθ, cosθ)
       const dot = (v.x * fx + v.z * fz) / Math.max(planSpeed, 0.001);
@@ -660,7 +742,11 @@ class App {
     this.character.setState(state, v.y, dir);
     this.character.update(dt, planSpeed, this.facing);
     this.character.setSlopeAngle(this.grounded ? this.slopeAngleAt(p.x, p.z, p.y) : 0);
-    this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), !this.grounded, state);
+    const stepped = this.audio.updateFootsteps(dt, planSpeed, this.character.getCyclePhase(), !this.grounded, state);
+    if (stepped) {
+      this.footSide *= -1;
+      this.footprints.spawn(p.x, p.z, this.facing, this.footSide);
+    }
   }
 
   private frame() {
@@ -686,6 +772,7 @@ class App {
       }
     }
     const pp = this.mode === 'welcome' ? new BABYLON.Vector3(0, 0, 0) : this.ppos;
+    this.footprints.update(dt);
     this.pixelPortal.update(dt, pp);
     this.env.focusSun(pp);
     this.drone.update(dt, pp);

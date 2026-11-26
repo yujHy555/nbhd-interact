@@ -1,6 +1,6 @@
 import * as BABYLON from 'babylonjs';
 
-export type AnimState = 'idle' | 'walk' | 'run' | 'jump' | 'doubleJump' | 'fall' | 'land' | 'strafe' | 'crouch' | 'flip';
+export type AnimState = 'idle' | 'walk' | 'run' | 'jump' | 'doubleJump' | 'fall' | 'land' | 'strafe' | 'crouch' | 'flip' | 'slide' | 'crouchwalk';
 export type MoveDir = 'forward' | 'back' | 'left' | 'right' | 'idle';
 
 export interface CharacterColors {
@@ -338,7 +338,8 @@ export class Character {
     if (this.mixamo) {
       const clip = s === 'run' ? 'run' : s === 'walk' ? 'walk' : s === 'strafe' ? 'walk'
         : s === 'jump' || s === 'doubleJump' || s === 'flip' ? 'jump'
-        : s === 'crouch' ? 'crouch' : s === 'land' ? 'land' : s === 'fall' ? 'fall' : 'idle';
+        : s === 'crouch' ? 'crouch' : s === 'crouchwalk' ? 'crouchwalk'
+        : s === 'slide' ? 'slide' : s === 'land' ? 'land' : s === 'fall' ? 'fall' : 'idle';
       this.playMocap(clip);
     }
   }

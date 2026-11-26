@@ -16,7 +16,9 @@ export class Minimap {
     this.H = canvas.height;
     this.sx = this.W / 48; // ±24 m of route
     this.sz = this.H / 20; // ±10 m across
+    this.k = this.W / 488; // UI scale relative to the original map size
   }
+  private k: number;
 
   private px(x: number, playerX: number) { return this.W / 2 + (x - playerX) * this.sx; }
   private py(z: number) { return this.H / 2 - z * this.sz; }
@@ -56,8 +58,8 @@ export class Minimap {
       c.fillStyle = colors[i % colors.length];
       c.fillRect(x0, 0, Math.max(2, x1 - x0), H);
       c.fillStyle = 'rgba(255,255,255,0.42)';
-      c.font = '600 15px Segoe UI, sans-serif';
-      c.fillText(z.name, Math.max(8, x0 + 8), 22);
+      c.font = `600 ${Math.round(15 * this.k)}px Segoe UI, sans-serif`;
+      c.fillText(z.name, Math.max(8 * this.k, x0 + 8 * this.k), 22 * this.k);
     });
 
     // Ramps — a warm line showing the incline between two heights
@@ -68,8 +70,8 @@ export class Minimap {
       c.lineWidth = 5;
       c.beginPath(); c.moveTo(x0, this.py(0)); c.lineTo(x1, this.py(0)); c.stroke();
       c.fillStyle = 'rgba(255,200,87,0.9)';
-      c.font = '600 13px Segoe UI, sans-serif';
-      c.fillText('30°', (x0 + x1) / 2 - 12, this.py(0) - 10);
+      c.font = `600 ${Math.round(13 * this.k)}px Segoe UI, sans-serif`;
+      c.fillText('30°', (x0 + x1) / 2 - 12 * this.k, this.py(0) - 10 * this.k);
     }
 
     // Platforms
@@ -93,7 +95,7 @@ export class Minimap {
       const x = this.px(p.pos.x, playerX);
       if (x < 0 || x > W) continue;
       c.fillStyle = '#ffd75e';
-      c.beginPath(); c.arc(x, this.py(p.pos.z), 4.5, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(x, this.py(p.pos.z), 4.5 * this.k, 0, Math.PI * 2); c.fill();
     }
 
     // Player view cone
@@ -102,7 +104,7 @@ export class Minimap {
     const cx = this.px(playerX, playerX), cy = this.py(playerZ);
     c.fillStyle = 'rgba(92,225,230,0.16)';
     c.beginPath(); c.moveTo(cx, cy);
-    c.arc(cx, cy, 70, ang - 0.42, ang + 0.42);
+    c.arc(cx, cy, 70 * this.k, ang - 0.42, ang + 0.42);
     c.closePath(); c.fill();
 
     // Player marker (triangle pointing along travel heading)
@@ -113,18 +115,18 @@ export class Minimap {
     c.shadowColor = '#5ce1e6';
     c.shadowBlur = 14;
     c.beginPath();
-    c.moveTo(0, -11); c.lineTo(8, 9); c.lineTo(0, 5); c.lineTo(-8, 9);
+    c.moveTo(0, -11 * this.k); c.lineTo(8 * this.k, 9 * this.k); c.lineTo(0, 5 * this.k); c.lineTo(-8 * this.k, 9 * this.k);
     c.closePath(); c.fill();
     c.restore();
     c.shadowBlur = 0;
     c.fillStyle = 'rgba(255,255,255,0.8)';
-    c.font = '600 13px Segoe UI, sans-serif';
-    c.fillText('YOU', cx + 12, cy - 10);
+    c.font = `600 ${Math.round(13 * this.k)}px Segoe UI, sans-serif`;
+    c.fillText('YOU', cx + 12 * this.k, cy - 10 * this.k);
 
     // Compass ticks
     c.fillStyle = 'rgba(255,255,255,0.5)';
-    c.font = '600 13px ui-monospace, monospace';
-    c.fillText('W', 10, H - 12);
-    c.fillText('ROUTE →', W - 88, H - 12);
+    c.font = `600 ${Math.round(13 * this.k)}px ui-monospace, monospace`;
+    c.fillText('W', 10 * this.k, H - 12 * this.k);
+    c.fillText('ROUTE →', W - 88 * this.k, H - 12 * this.k);
   }
 }

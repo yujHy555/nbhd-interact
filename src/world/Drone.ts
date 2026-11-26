@@ -40,7 +40,6 @@ uniform vec3 cameraPosition;
 uniform vec3 playerPos;
 uniform float scanSpeed;
 
-// cheap hash / value-noise
 float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
 float noise(vec2 p){
   vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -49,53 +48,65 @@ float noise(vec2 p){
 void main(void) {
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(cameraPosition - vPosW);
-  float fres = pow(1.0 - abs(dot(N, V)), 2.6);           // rim glow
+  float fres = pow(1.0 - abs(dot(N, V)), 2.0);           // silhouette rim glow
   float y = vUV.y;                                        // 0 = top, 1 = base
+  float ang = atan(N.z, N.x);                             // angle around the cone
 
-  // 1) Volumetric noise plasmaCurling inside the cone
-  float plasma = noise(vec2(vUV.x*7.0, y*5.0 - time*1.6));
-  plasma += 0.5*noise(vec2(vUV.x*15.0+2.3, y*11.0 - time*2.7));
-  plasma = pow(plasma*0.66, 2.0);
+  // 1) Helical energy spirals wrapping the beam (cinematic signature)
+  float helix = sin(ang*3.0 + y*20.0 - time*scanSpeed*1.1)*0.5+0.5;
+  helix = pow(helix, 9.0);
+  float helix2 = sin(ang*5.0 - y*14.0 - time*scanSpeed*0.7)*0.5+0.5;
+  helix2 = pow(helix2, 14.0);
 
-  // 2) Travelling emission bands (energy pulses down the beam)
-  float bands = sin(y*46.0 - time*scanSpeed)*0.5+0.5;
-  bands = pow(bands, 6.0);
+  // 2) Volumetric plasma churning inside the cone
+  float plasma = noise(vec2(vUV.x*9.0, y*6.0 - time*1.5));
+  plasma += 0.5*noise(vec2(vUV.x*19.0+2.3, y*13.0 - time*2.3));
+  plasma = pow(plasma*0.7, 2.0);
 
-  // 3) Fine scanning micro-lines
-  float lines = sin(y*220.0 - time*30.0)*0.5+0.5;
-  lines = pow(lines, 8.0);
+  // 3) Travelling emission bands — energy pulses racing down the beam
+  float bands = sin(y*42.0 - time*scanSpeed)*0.5+0.5;
+  bands = pow(bands, 10.0);
 
-  // 4) Rotating holographic data rings (polar coordinates)
+  // 4) Fine scanning micro-lines
+  float lines = sin(y*260.0 - time*42.0)*0.5+0.5;
+  lines = pow(lines, 12.0);
+
+  // 5) Rotating holographic data rings (polar)
   vec2 pc = vUV*2.0-1.0;
-  float ang = atan(pc.y,pc.x);
   float rad = length(pc);
-  float rings = sin(rad*26.0 - time*5.0 + ang*2.0)*0.5+0.5;
-  rings = pow(rings, 10.0) * smoothstep(0.9,0.1,rad);
+  float rings = sin(rad*30.0 - time*6.0 + ang*3.0)*0.5+0.5;
+  rings = pow(rings, 12.0) * smoothstep(1.0,0.1,rad);
 
-  // 5) World-space projection grid aligned to the player
-  vec2 g = abs(fract((vPosW.xz - playerPos.xz)*2.6)-0.5);
-  float grid = smoothstep(0.45,0.5,max(g.x,g.y));
+  // 6) World-space projection grid locked to the player
+  vec2 g = abs(fract((vPosW.xz - playerPos.xz)*2.8)-0.5);
+  float grid = smoothstep(0.44,0.5,max(g.x,g.y));
 
-  // 6) Sweeping scan disc that hits the player
-  float sweepY = fract(time*0.42);
-  float sweep = exp(-pow((y-sweepY)*14.0,2.0));
+  // 7) Sweeping scan disc that travels down and hits the player
+  float sweepY = fract(time*0.5);
+  float sweep = exp(-pow((y-sweepY)*16.0,2.0));
 
-  // 7) Core hotspot at the player's position
+  // 8) Volumetric god-rays fanning from the emitter
+  float rays = pow(abs(sin(ang*8.0 + time*0.7)), 18.0);
+
+  // 9) Hot focus directly over the player
   float dxz = length(vPosW.xz - playerPos.xz);
-  float focus = exp(-dxz*dxz*4.0) * (0.35+0.65*(1.0-y));
+  float focus = exp(-dxz*dxz*5.0) * (0.4+0.6*(1.0-y));
 
-  float body = 0.06 + plasma*0.55 + bands*0.5 + lines*0.12 + rings*0.35 + grid*0.3 + fres*0.9 + sweep*0.8 + focus*1.1;
-  float fade = smoothstep(0.0,0.12,y) * (1.0 - smoothstep(0.88,1.0,y));
-  float pulse = 0.9 + 0.1*sin(time*10.0);
+  float body = 0.04 + plasma*0.4 + bands*0.55 + lines*0.12 + rings*0.4 + grid*0.28
+             + fres*1.0 + sweep*0.9 + focus*1.2 + helix*0.55 + helix2*0.4 + rays*0.35;
+  float fade = smoothstep(0.0,0.1,y) * (1.0 - smoothstep(0.9,1.0,y));
+  float pulse = 0.9 + 0.1*sin(time*12.0);
   float a = body * fade * strength * pulse;
 
-  // Hollywood colour ramp: deep crimson core → hot red → white-hot highlights
-  vec3 deep = beamColor*0.35;
-  vec3 hot  = beamColor*1.6;
-  vec3 white = vec3(1.0,0.85,0.88);
-  vec3 c = mix(deep, hot, clamp(plasma+bands+sweep,0.0,1.0));
-  c = mix(c, white, clamp(rings*0.8 + fres*0.5 + focus*0.9 + pow(lines,2.0)*0.4, 0.0, 1.0));
-  c += beamColor*fres*1.2;
+  // AAA colour ramp: deep crimson → hot red → white-hot → electric cyan accents
+  vec3 deep = beamColor*0.3;
+  vec3 hot  = beamColor*1.5;
+  vec3 white = vec3(1.0,0.92,0.9);
+  vec3 cyan = vec3(0.2,0.9,1.0);
+  vec3 c = mix(deep, hot, clamp(plasma+bands+sweep+helix,0.0,1.0));
+  c = mix(c, white, clamp(rings*0.8 + fres*0.6 + focus*0.9 + pow(lines,2.0)*0.4, 0.0, 1.0));
+  c = mix(c, cyan, clamp(helix*0.4 + helix2*0.3 + rays*0.35 + bands*0.15, 0.0, 0.75));
+  c += beamColor*fres*1.0;
   gl_FragColor = vec4(c, clamp(a,0.0,1.0));
 }`;
 
@@ -160,10 +171,11 @@ export class Drone {
   private body!: BABYLON.Mesh;
   private rotors: BABYLON.Mesh[] = [];
   private leds: BABYLON.Mesh[] = [];
-  private cpuLeds: { mesh: BABYLON.Mesh; mat: BABYLON.StandardMaterial; phase: number; freq: number; hex: string }[] = [];
   private ledMat!: BABYLON.StandardMaterial;
   private coreMat!: BABYLON.StandardMaterial;
   private cone!: BABYLON.Mesh;
+  private coreBeam!: BABYLON.Mesh;
+  private coreBeamMat!: BABYLON.StandardMaterial;
   private scanMat!: BABYLON.ShaderMaterial;
   private ring!: BABYLON.Mesh;
   private ringMat!: BABYLON.StandardMaterial;
@@ -268,23 +280,6 @@ export class Drone {
       this.leds.push(led);
     }
 
-    // CPU "brain" panel with six independently blinking coloured LEDs
-    const panel = BABYLON.MeshBuilder.CreateBox('droneCPU', { width: 0.72, height: 0.05, depth: 0.44 }, this.scene);
-    panel.position.y = 0.3;
-    panel.material = shell;
-    panel.parent = this.root;
-    const palette = ['#32ff80', '#ffd933', '#ff3355', '#4d99ff', '#ff66e6', '#33ffff'];
-    for (let i = 0; i < 6; i++) {
-      const col = i % 3, row = Math.floor(i / 3);
-      const hex = palette[i];
-      const mat = this.emissive(`droneCPULED${i}`, hex);
-      const led = BABYLON.MeshBuilder.CreateBox('droneCPULED', { width: 0.12, height: 0.04, depth: 0.12 }, this.scene);
-      led.position.set(-0.2 + col * 0.2, 0.34, -0.09 + row * 0.18);
-      led.material = mat;
-      led.parent = this.root;
-      this.cpuLeds.push({ mesh: led, mat, phase: i * 2.1, freq: 9 + i * 1.7, hex });
-    }
-
     // Real spot light — the beam shines directly onto the player (AAA lighting)
     this.scanLight = new BABYLON.SpotLight('droneScanLight', new BABYLON.Vector3(0, -0.2, 0), new BABYLON.Vector3(0, -1, 0), 0.5, 4, this.scene);
     this.scanLight.diffuse = BABYLON.Color3.FromHexString('#ff2a3a');
@@ -326,6 +321,18 @@ export class Drone {
     this.cone.parent = this.root;
     this.cone.isPickable = false;
     this.cone.setEnabled(false);
+
+    // Bright inner core — a thin white-hot column down the centre of the beam.
+    // Centred on the drone (local x/z = 0) so the beam reads as one clean shaft.
+    this.coreBeamMat = this.emissive('droneCoreBeam', '#fff2f2');
+    this.coreBeamMat.alpha = 0.5;
+    this.coreBeam = BABYLON.MeshBuilder.CreateCylinder('droneCoreBeam', {
+      diameter: 0.16, height: 1, tessellation: 16, sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+    }, this.scene);
+    this.coreBeam.material = this.coreBeamMat;
+    this.coreBeam.parent = this.root;
+    this.coreBeam.isPickable = false;
+    this.coreBeam.setEnabled(false);
 
     // Expanding ground ring under the target
     this.ringMat = this.emissive('droneRingMat', '#ff2a3a');
@@ -392,7 +399,7 @@ export class Drone {
     if (this.phase !== 'dormant') return;
     this.target.copyFrom(player);
     this.startPos.set(player.x + 20, player.y + 9, player.z + 7);
-    this.hoverPos.set(player.x + 0.5, player.y + 3.4, player.z + 1.2);
+    this.hoverPos.set(player.x, player.y + 3.4, player.z);
     this.root.position.copyFrom(this.startPos);
     this.root.setEnabled(true);
     this.phase = 'arrive';
@@ -415,10 +422,6 @@ export class Drone {
     this.coreMat.emissiveColor = this.phase === 'scan'
       ? BABYLON.Color3.FromHexString('#ff2a3a').scale(0.6 + flash)
       : BABYLON.Color3.FromHexString('#20d7ff').scale(0.8 + flash * 0.5);
-    for (const l of this.cpuLeds) {
-      const blink = Math.sin(this.time * l.freq + l.phase) * 0.5 + 0.5;
-      l.mat.emissiveColor = BABYLON.Color3.FromHexString(l.hex).scale(0.3 + blink * 0.9);
-    }
     this.scanMat.setFloat('time', this.time);
     this.scanMat.setVector3('playerPos', player);
     const camPos = this.scene.activeCamera ? this.scene.activeCamera.position : BABYLON.Vector3.Zero();
@@ -435,7 +438,7 @@ export class Drone {
       const k = ease(t);
       // Recompute hover target each frame so a moving player is tracked, then
       // smooth-follow it — prevents the snap when hoverPos changes.
-      this.hoverPos.set(player.x + 0.5, player.y + 3.4, player.z + 1.2);
+      this.hoverPos.set(player.x, player.y + 3.4, player.z);
       this.root.position.copyFrom(BABYLON.Vector3.Lerp(this.startPos, this.hoverPos, k));
       // small hovering bob + banking into the approach
       this.root.position.y += Math.sin(this.time * 3) * 0.16 * (1 - k);
@@ -444,19 +447,20 @@ export class Drone {
       this.root.rotation.y = Math.PI + (1 - k) * 0.5;
       if (t >= 1) { this.phase = 'hover'; this.phaseT = 0; }
     } else if (this.phase === 'hover') {
-      this.hoverPos.set(player.x + 0.5, player.y + 3.4 + Math.sin(this.time * 2.2) * 0.13, player.z + 1.2);
+      this.hoverPos.set(player.x, player.y + 3.4 + Math.sin(this.time * 2.2) * 0.13, player.z);
       this.follow(this.hoverPos, dt, 3.2);
       this.root.rotation.z = Math.sin(this.time * 1.8) * 0.04;
       if (this.phaseT > 1.0) {
         this.phase = 'scan'; this.phaseT = 0;
         this.cone.setEnabled(true);
+        this.coreBeam.setEnabled(true);
         this.ring.setEnabled(true);
         this.halo.setEnabled(true);
         this.onCue?.();
       }
     } else if (this.phase === 'scan') {
       // Smoothly track the player during the sweep — no position snapping.
-      this.follow(new BABYLON.Vector3(player.x + 0.4, player.y + 3.4 + Math.sin(this.time * 2.6) * 0.08, player.z + 0.9), dt, 3.8);
+      this.follow(new BABYLON.Vector3(player.x, player.y + 3.4 + Math.sin(this.time * 2.6) * 0.08, player.z), dt, 3.8);
       this.root.rotation.z = Math.sin(this.time * 3) * 0.03;
 
       const T = 6.0;
@@ -466,10 +470,15 @@ export class Drone {
       if (t < 0.18) beam = ease(t / 0.18);
       else if (t > 0.8) beam = 1 - ease((t - 0.8) / 0.2);
       const h = Math.max(0.05, this.root.position.y - player.y);
+      // Cone is centred on the drone's own axis (local x/z = 0) — the drone
+      // hovers directly above the player, so the beam lands exactly on them.
       this.cone.scaling.set(1, h, 1);
-      this.cone.position.y = -h / 2;
-      this.cone.position.x = player.x - this.root.position.x;
-      this.cone.position.z = player.z - this.root.position.z;
+      this.cone.position.set(0, -h / 2, 0);
+      this.cone.rotation.y += dt * 0.6; // slow helical twist of the beam
+      // Inner white-hot core shares the same centred axis and height.
+      this.coreBeam.scaling.set(1, h, 1);
+      this.coreBeam.position.set(0, -h / 2, 0);
+      this.coreBeamMat.alpha = 0.35 * beam * (0.8 + 0.2 * Math.sin(this.time * 9));
       this.scanMat.setFloat('strength', beam);
       this.scanMat.setFloat('scanSpeed', 10 + Math.sin(this.time * 2) * 4);
       this.haloMat.alpha = 0.7 * beam;
@@ -493,6 +502,7 @@ export class Drone {
 
       if (t >= 1) {
         this.cone.setEnabled(false);
+        this.coreBeam.setEnabled(false);
         this.ring.setEnabled(false);
         this.halo.setEnabled(false);
         this.scanLight.intensity = 0;
@@ -534,6 +544,8 @@ export class Drone {
     this.glow.dispose();
     this.root.dispose(false, true);
     this.cone.dispose();
+    this.coreBeam.dispose();
+    this.coreBeamMat.dispose();
     this.ring.dispose();
     this.scanMat.dispose();
     this.ringMat.dispose();

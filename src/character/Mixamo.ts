@@ -93,6 +93,29 @@ export class MixamoController implements MixamoBinding {
     }
   }
 
+  /** Load an additional animation-only GLB (no visible mesh) and register its
+   *  clip under `alias`. Used for extra mocap like slide / crouched-walk that
+   *  ships separately from the main character GLB. */
+  public async addClip(url: string, file: string, alias: string): Promise<boolean> {
+    try {
+      const result = await BABYLON.SceneLoader.ImportMeshAsync('', url, file, this.scene);
+      for (const g of result.animationGroups) {
+        g.name = alias;
+        this.clipMap.set(alias.toLowerCase(), g);
+        this.animationGroups.push(g);
+        g.stop(); g.weight = 0;
+      }
+      // These GLBs are animation-only (no meshes), but hide any if present.
+      for (const m of result.meshes) m.setEnabled(false);
+      for (const n of result.transformNodes) n.setEnabled(false);
+      console.log(`[Mixamo] added clip ${alias} from ${file}`);
+      return result.animationGroups.length > 0;
+    } catch (e) {
+      console.warn(`[Mixamo] failed to add clip ${alias}:`, e);
+      return false;
+    }
+  }
+
   /** Map a game state to a clip name with common Mixamo aliases. */
   private resolve(name: string): BABYLON.AnimationGroup | null {
     const aliases: Record<string, string[]> = {
@@ -102,7 +125,9 @@ export class MixamoController implements MixamoBinding {
       jump: ['jump', 'jump up', 'jumping', 'jump in place'],
       fall: ['fall', 'falling', 'fall down'],
       land: ['land', 'landing', 'landing idle'],
-      crouch: ['crouch', 'crouching', 'crouch idle', 'sneak'],
+      crouch: ['crouch', 'crouching', 'crouch idle', 'sneak', 'crouchwalk'],
+      crouchwalk: ['crouchwalk', 'crouched walk', 'crouched walking'],
+      slide: ['slide', 'sliding', 'running slide'],
       flip: ['flip', 'front flip', 'aerial flip', 'jump flip'],
       doublejump: ['double jump', 'jump 2', 'flip jump'],
       back: ['walk backwards', 'backward walk', 'walk back'],

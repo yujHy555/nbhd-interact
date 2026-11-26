@@ -65,28 +65,35 @@ export class GameAudio {
   }
   public crouch() { this.noise(0.12, 0.05, 1200); this.tone(160, 0.1, 'sine', 0.08, 100); }
 
-  /** Footsteps are driven by the animation cycle — call from the foot-plant event. */
+  /** AAA footstep: a soft heel strike, a gritty concrete scuff and a low body
+   *  thud — three layers so it reads as a real shoe on pavement. */
   public footstep(surface = 'concrete', intensity = 1) {
     if (surface !== this.lastSurface) { this.lastSurface = surface; }
     const base = surface === 'metal' ? 1500 : surface === 'grass' ? 700 : 980;
-    this.noise(0.06, 0.07 * intensity, base, 'bandpass');
-    this.tone(70 + Math.random() * 20, 0.05, 'sine', 0.06 * intensity, 45);
+    // Heel strike — short bright transient.
+    this.noise(0.045, 0.1 * intensity, base, 'bandpass');
+    // Gritty scuff tail on concrete.
+    this.noise(0.075, 0.045 * intensity, base * 0.55, 'bandpass');
+    // Low body thud gives the step weight.
+    this.tone(70 + Math.random() * 18, 0.07, 'sine', 0.09 * intensity, 45);
     if (surface === 'metal') this.tone(1800, 0.04, 'triangle', 0.03, 1200);
   }
 
-  /** Drive footsteps from the REAL Mixamo cycle phase (0..1). Two clean
-   *  footfalls per cycle — one at 0.05, one at 0.55 — with slight variation. */
-  public updateFootsteps(dt: number, speed: number, phase: number, grounded: boolean, state: string) {
-    if (!grounded || speed < 0.4 || (state !== 'walk' && state !== 'run')) { this.footTimer = 0; this.lastStep = -1; return; }
-    // phase is normalised 0..1 of the active clip; two foot plants per cycle.
+  /** Drive footsteps from the REAL Mixamo cycle phase (0..1). Two footfalls
+   *  per cycle. Returns true on the exact frame a step fires so the caller can
+   *  spawn a matching ground footprint. */
+  public updateFootsteps(dt: number, speed: number, phase: number, grounded: boolean, state: string): boolean {
+    if (!grounded || speed < 0.4 || (state !== 'walk' && state !== 'run')) { this.footTimer = 0; this.lastStep = -1; return false; }
     const stepIndex = Math.floor(phase * 2);
     if (stepIndex !== this.lastStep) {
       this.lastStep = stepIndex;
-      const surface = 'concrete';
-      const intensity = state === 'run' ? 1.2 : 0.9;
-      this.footstep(surface, intensity * (0.94 + Math.random() * 0.12)); // natural variation
+      const intensity = state === 'run' ? 1.25 : 0.95;
+      this.footstep('concrete', intensity * (0.94 + Math.random() * 0.12));
+      void dt;
+      return true;
     }
     void dt;
+    return false;
   }
   private lastStep = -1;
 
