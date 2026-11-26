@@ -181,7 +181,11 @@ export class MixamoController implements MixamoBinding {
     group.start(loop);
     group.weight = 0;
     let t = 0;
-    const FADE = 0.16; // seconds — snappy, AAA feel
+    // The running-slide ends with the hips ~1 m ahead of their neutral pose.
+    // A normal 0.16 s crossfade snaps the body backward in a few frames —
+    // reads as a teleport. Ease out of the slide over a longer window so the
+    // recovery is a smooth settle while every other transition stays snappy.
+    const FADE = old && old.name.toLowerCase() === 'slide' ? 0.55 : 0.16;
     this.fadeObs = this.scene.onBeforeRenderObservable.add(() => {
       t += this.scene.getEngine().getDeltaTime() / 1000 / FADE;
       const k = Math.min(1, t);
