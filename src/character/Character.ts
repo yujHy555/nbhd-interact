@@ -379,9 +379,11 @@ export class Character {
       let nominal = 1;
       if (this.state === 'run') nominal = 4.2;
       else if (this.state === 'walk' || this.state === 'strafe') nominal = 2.0;
-      // Slide plays at 1x — the clip's run-up→slide→recover must keep its
-      // authored timing, otherwise it reads as a leg kick.
-      const ratio = nominal > 1 ? Math.min(2.2, Math.max(0.4, speed / nominal)) : 1;
+      // Slide is time-matched to the 1.0 s controller timer: the 94-frame
+      // clip plays at ~1.5x so its recovery finishes exactly as control
+      // returns — no mid-slide pose at the hand-off.
+      const ratio = this.state === 'slide' ? 1.5
+        : nominal > 1 ? Math.min(2.2, Math.max(0.4, speed / nominal)) : 1;
       this.mixamo.setCurrentSpeed(this.dir === 'back' ? -ratio : ratio);
       this.updateSecondaryOnly(dt);
       return;
@@ -510,12 +512,10 @@ export class Character {
    *  controller owns the root; IK only supplements it on real slopes. */
   private footLift = 0;
 
-  // Rate-limited root-motion offset. The animation advances on wall-clock
-  // time, so one slow frame can jump it ahead of the kinematic player — a
-  // rate limit stops that from shoving the whole rig in a single step.
+  // Exact per-frame root-motion cancellation — keeps the visible body on the
+  // collider at every point of a clip, including the slide's fast recovery.
   private compX = 0;
   private compZ = 0;
-  private compReady = false;
 
   /** Rest-pose hips offset from the collider (world space). Mixamo clips
    *  translate the hips as root motion; the running-slide drifts ~1 m forward
@@ -554,16 +554,11 @@ export class Character {
     const rx = Math.cos(yaw), rz = -Math.sin(yaw);
     const targetZ = -(ex * fx + ez * fz);
     const targetX = -(ex * rx + ez * rz);
-    if (!this.compReady) {
-      this.compX = targetX; this.compZ = targetZ; this.compReady = true;
-    } else {
-      // Normal hand-offs move this by <0.1 m/frame; the cap only bites on a
-      // genuine hitch, so the body can never jump in one frame.
-      const MAX = 0.14;
-      const dz = Math.max(-MAX, Math.min(MAX, targetZ - this.compZ));
-      const dx = Math.max(-MAX, Math.min(MAX, targetX - this.compX));
-      this.compX += dx; this.compZ += dz;
-    }
+    // Apply the exact inverse every frame. Any rate limiting here makes the
+    // body lag the collider when the clip's root motion unwinds — up to 0.8 m
+    // at the slide exit, which reads as the player being in the wrong place.
+    this.compX = targetX;
+    this.compZ = targetZ;
     gr.position.z = this.compZ;
     gr.position.x = this.compX;
     // Refresh immediately so foot IK and rendering both see the final pose.
