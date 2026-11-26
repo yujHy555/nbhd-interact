@@ -306,7 +306,11 @@ export class Character {
     this.mixamo = null;
     for (const m of this.meshes) m.setEnabled(true);
   }
-  public playMocap(name: string) { return this.mixamo?.play(name, true) ?? false; }
+  public playMocap(name: string) {
+    // Slide is a one-shot: press once → the full animation plays at normal
+    // speed, then the controller blends back to run/walk from where it ended.
+    return this.mixamo?.play(name, name !== 'slide') ?? false;
+  }
 
   // ---------------------------------------------------------------- public API
   public getMeshes() { return this.meshes; }
@@ -364,7 +368,8 @@ export class Character {
       let nominal = 1;
       if (this.state === 'run') nominal = 4.2;
       else if (this.state === 'walk' || this.state === 'strafe') nominal = 2.0;
-      else if (this.state === 'slide') nominal = 2.6; // low, fast ground slide
+      // Slide plays at 1x — the clip's run-up→slide→recover must keep its
+      // authored timing, otherwise it reads as a leg kick.
       const ratio = nominal > 1 ? Math.min(2.2, Math.max(0.4, speed / nominal)) : 1;
       this.mixamo.setCurrentSpeed(this.dir === 'back' ? -ratio : ratio);
       this.updateSecondaryOnly(dt);
