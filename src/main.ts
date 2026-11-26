@@ -40,7 +40,6 @@ class App {
   private footprints!: Footprints;
   private footSide = 1;
   private slideTimer = 0;
-  private slideRecover = 0; // brief coast-out after a slide so heading/momentum stay continuous
 
   private pixelPortal!: PixelPortal;
   private exploreTime = 0;
@@ -485,7 +484,6 @@ class App {
     this.ppos.set(2.4, 0, 0);
     this.pvel.set(0, 0, 0);
     this.slideTimer = 0;
-    this.slideRecover = 0;
     this.grounded = true;
     this.facing = Math.PI / 2;
     this.character.headingPivot.rotation.y = Math.PI / 2;
@@ -500,7 +498,6 @@ class App {
     this.ppos.set(0, 0, 0);
     this.pvel.set(0, 0, 0);
     this.slideTimer = 0;
-    this.slideRecover = 0;
     this.character.setPosition(0, 0, 0);
     this.camera.snap(new BABYLON.Vector3(0, 1.2, 0));
     this.ui.setZone('WELCOME');
@@ -596,12 +593,14 @@ class App {
     if (s.slidePressed && this.grounded && Math.hypot(v.x, v.z) > 4) this.slideTimer = 1.55;
     if (this.slideTimer > 0) {
       this.slideTimer = Math.max(0, this.slideTimer - dt);
-      // When the clip ends, coast briefly on the slide's momentum. Without
-      // this, fresh input/camera direction instantly steers the player away
-      // from the slide exit — reading as an arc turn and an unwanted shove.
-      if (this.slideTimer === 0) this.slideRecover = 0.18;
+      if (this.slideTimer === 0) {
+        // Resume AT the slide's end position with the velocity the controls
+        // currently ask for — run / walk / idle, no leftover coast or drift.
+        if (moveInput) { v.x = dx * maxSpeed; v.z = dz * maxSpeed; }
+        else { v.x = 0; v.z = 0; }
+        this.facing = moveInput ? Math.atan2(v.x, v.z) : this.facing;
+      }
     }
-    if (this.slideRecover > 0) this.slideRecover = Math.max(0, this.slideRecover - dt);
     const sliding = this.slideTimer > 0;
 
     // ---- Travelator: a real conveyor belt ----
@@ -627,9 +626,8 @@ class App {
       tx = v.x;
       tz = v.z;
     }
-    // During a slide (and the short coast-out after it), preserve momentum —
-    // no braking, no steering back toward a possibly stale input direction.
-    if (sliding || this.slideRecover > 0) {
+    // During a slide, preserve momentum — no braking back toward a walk target.
+    if (sliding) {
       tx = v.x; tz = v.z;
     }
     v.x += Math.max(-step, Math.min(step, tx - v.x));

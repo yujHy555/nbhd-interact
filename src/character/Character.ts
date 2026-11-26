@@ -94,7 +94,9 @@ export class Character {
     this.flipPivot.position.y = 0.96; // waist / centre of mass
     // Run IK AFTER the Mixamo animation is evaluated so it can't be overwritten.
     scene.onAfterAnimationsObservable.add(() => {
-      if (this.mixamo) this.applyFootIK(this.scene.getEngine().getDeltaTime() / 1000);
+      if (!this.mixamo) return;
+      this.cancelRootMotion();
+      this.applyFootIK(this.scene.getEngine().getDeltaTime() / 1000);
     });
     this.buildMaterials();
     this.buildRig();
@@ -296,6 +298,15 @@ export class Character {
           if (b) ankle = Math.min(ankle, BABYLON.Vector3.TransformCoordinates(b.getAbsolutePosition(), skinned.getWorldMatrix()).y);
         }
         if (isFinite(ankle)) this.footOffset = Math.max(0.02, ankle - this.root.getAbsolutePosition().y);
+        // Rest-pose hips offset — the target the root-motion cancel pins to.
+        const hips = skinned.skeleton.bones.find((b) => /Hips/i.test(b.name));
+        if (hips) {
+          skinned.computeWorldMatrix(true);
+          skinned.skeleton.computeAbsoluteMatrices();
+          const wp = BABYLON.Vector3.TransformCoordinates(hips.getAbsolutePosition(), skinned.getWorldMatrix());
+          const rp = this.root.getAbsolutePosition();
+          this.rootMotionRef = { x: wp.x - rp.x, z: wp.z - rp.z };
+        }
       }
     }
     // Hide procedural mesh while the mocap character is bound
@@ -498,6 +509,45 @@ export class Character {
    *  (not a per-frame snap), so it cannot fight the root and cause bob. The
    *  controller owns the root; IK only supplements it on real slopes. */
   private footLift = 0;
+
+  /** Rest-pose hips offset from the collider (world space). Mixamo clips
+   *  translate the hips as root motion; the running-slide drifts ~1 m forward
+   *  then returns. We cancel that drift at runtime so the visible body stays
+   *  exactly on the collider and resumes idle/walk/run from the slide's end
+   *  position — the GLB and all its clips stay untouched. */
+  private rootMotionRef: { x: number; z: number } | null = null;
+
+  private cancelRootMotion() {
+    if (!this.mixamo || !this.rootMotionRef) return;
+    const gr = this.mixamo.root;
+    const mesh = gr.getChildMeshes(false)
+      .find((m) => (m as BABYLON.Mesh).skeleton) as BABYLON.Mesh | undefined;
+    if (!mesh || !mesh.skeleton) return;
+    const hips = mesh.skeleton.bones.find((b) => /Hips/i.test(b.name));
+    if (!hips) return;
+
+    // Drop last frame's compensation so we measure the animation's raw drift,
+    // then offset the glTF root by the exact inverse — no feedback lag, and it
+    // tracks crossfades precisely.
+    const savedX = gr.position.x, savedZ = gr.position.z;
+    gr.position.x = 0; gr.position.z = 0;
+    gr.computeWorldMatrix(true);
+    mesh.computeWorldMatrix(true);
+    mesh.skeleton.computeAbsoluteMatrices();
+    const wp = BABYLON.Vector3.TransformCoordinates(hips.getAbsolutePosition(), mesh.getWorldMatrix());
+    const rp = this.root.getAbsolutePosition();
+    const ex = (wp.x - rp.x) - this.rootMotionRef.x;
+    const ez = (wp.z - rp.z) - this.rootMotionRef.z;
+    gr.position.x = savedX; gr.position.z = savedZ;
+
+    // Project the world drift onto the character's local axes (heading pivot
+    // carries only yaw). glTF-root position is in that frame and unscaled.
+    const yaw = this.headingPivot.rotation.y;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    gr.position.z = -(ex * fx + ez * fz);
+    gr.position.x = -(ex * rx + ez * rz);
+  }
 
   public applyFootIK(dt: number) {
     if (!this.mixamo || !this.groundSampler) return;
